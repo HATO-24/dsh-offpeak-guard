@@ -231,7 +231,13 @@ window.__ModuleLoader__.load({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const json = await response.json();
+      const text = await response.text();
+      let json = {};
+      try {
+        json = text === '' ? {} : JSON.parse(text);
+      } catch {
+        json = {};
+      }
       if (!response.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${response.status}`);
       if (sharedStatus.ctx !== null) await loadSharedStatus(sharedStatus.ctx);
       return json;
@@ -480,7 +486,13 @@ window.__ModuleLoader__.load({
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
           });
-          const json = await response.json();
+          const text = await response.text();
+          let json = {};
+          try {
+            json = text === '' ? {} : JSON.parse(text);
+          } catch {
+            json = {};
+          }
           if (!response.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${response.status}`);
           await refresh();
         } catch (caught) {

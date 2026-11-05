@@ -197,11 +197,10 @@ export function apply(ctx, rawConfig = {}) {
     };
   }, 'offpeak-guard: tools');
 
-  const webServer = ctx.get('webServer');
-  if (webServer !== undefined && typeof webServer.register === 'function') {
-    ctx.effect(
+  ctx.inject(['webServer'], (webCtx) => {
+    webCtx.effect(
       () =>
-        webServer.register({
+        webCtx.webServer.register({
           kind: 'prefix',
           path: '/plugins/dsh-offpeak-guard',
           async handler(req, res) {
@@ -241,5 +240,5 @@ export function apply(ctx, rawConfig = {}) {
         }),
       'offpeak-guard: settings route',
     );
-  }
+  });
 }
