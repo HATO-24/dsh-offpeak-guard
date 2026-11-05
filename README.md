@@ -1,5 +1,10 @@
 # 错峰调度 · 峰谷守卫（dsh-offpeak-guard）
 
+[![npm](https://img.shields.io/npm/v/dsh-offpeak-guard?color=blue)](https://www.npmjs.com/package/dsh-offpeak-guard)
+
+已发布到 npm：在 DSH 的插件页搜索 `dsh-offpeak-guard` 安装，或运行
+`dsh plugin --profile <profile> add dsh-offpeak-guard`。
+
 在 DeepSeek Harness 里按 **DeepSeek 峰谷计价** 安排工作：
 
 - **时间识别**：工作日 `09:00–12:00`、`14:00–18:00` 为峰值原价；其余时间（含午间、夜间、周末）为谷价，按 5 折计费（默认 `Asia/Shanghai`）。

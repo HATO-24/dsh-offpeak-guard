@@ -1,5 +1,10 @@
 # Off-peak guard (dsh-offpeak-guard)
 
+[![npm](https://img.shields.io/npm/v/dsh-offpeak-guard?color=blue)](https://www.npmjs.com/package/dsh-offpeak-guard)
+
+Published on npm: install it from the DSH Plugins page, or run
+`dsh plugin --profile <profile> add dsh-offpeak-guard`.
+
 Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
 
 - **Time awareness**: weekdays `09:00–12:00` and `14:00–18:00` are peak price; every other hour (lunch, night, weekends) is off-peak at 50% (time zone `Asia/Shanghai` by default).
