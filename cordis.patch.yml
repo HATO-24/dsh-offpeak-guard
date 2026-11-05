@@ -14,6 +14,7 @@
       config:
         enabled: true
         preset: 'auto'
+        pauseMode: 'pause-now'
         timezone: 'Asia/Shanghai'
         peakWeekdays: [1, 2, 3, 4, 5]
         peakWindows:
@@ -23,7 +24,10 @@
             end: '18:00'
         discount: 0.5
         holidays: []
+        holidaySource: 'auto'
+        holidayApi: 'https://timor.tech/api/holiday/year'
         modelPattern: 'deepseek'
+        peakPricedModels: []
         exemptModels: []
         pauseRunningOnPeak: true
         deferNewTurnsOnPeak: true

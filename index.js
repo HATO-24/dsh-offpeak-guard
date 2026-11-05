@@ -24,6 +24,7 @@ const OFFICIAL_WINDOWS = [
 export const Config = z.object({
   enabled: z.boolean().default(true),
   preset: z.string().default('auto'),
+  pauseMode: z.string().default('pause-now'),
   timezone: z.string().default('Asia/Shanghai'),
   peakWeekdays: z.array(z.natural().max(6)).default([1, 2, 3, 4, 5]),
   peakWindows: z
@@ -31,7 +32,10 @@ export const Config = z.object({
     .default(OFFICIAL_WINDOWS),
   discount: z.number().min(0.1).max(1).default(0.5),
   holidays: z.array(z.string()).default([]),
+  holidaySource: z.string().default('auto'),
+  holidayApi: z.string().default('https://timor.tech/api/holiday/year'),
   modelPattern: z.string().default('deepseek'),
+  peakPricedModels: z.array(z.string()).default([]),
   exemptModels: z.array(z.string()).default([]),
   pauseRunningOnPeak: z.boolean().default(true),
   deferNewTurnsOnPeak: z.boolean().default(true),
@@ -90,6 +94,7 @@ export function envConfig(env = process.env) {
     if (value !== undefined) out.enabled = value;
   }
   if (env.DSH_OFFPEAK_PRESET) out.preset = String(env.DSH_OFFPEAK_PRESET).trim();
+  if (env.DSH_OFFPEAK_PAUSE_MODE) out.pauseMode = String(env.DSH_OFFPEAK_PAUSE_MODE).trim();
   if (env.DSH_OFFPEAK_TIMEZONE) out.timezone = String(env.DSH_OFFPEAK_TIMEZONE).trim();
   if (env.DSH_OFFPEAK_PEAK_WEEKDAYS !== undefined) {
     const value = parseWeekdays(env.DSH_OFFPEAK_PEAK_WEEKDAYS);
@@ -107,7 +112,13 @@ export function envConfig(env = process.env) {
     const value = parseList(env.DSH_OFFPEAK_HOLIDAYS);
     if (value !== undefined) out.holidays = value;
   }
+  if (env.DSH_OFFPEAK_HOLIDAY_SOURCE) out.holidaySource = String(env.DSH_OFFPEAK_HOLIDAY_SOURCE).trim();
+  if (env.DSH_OFFPEAK_HOLIDAY_API) out.holidayApi = String(env.DSH_OFFPEAK_HOLIDAY_API).trim();
   if (env.DSH_OFFPEAK_MODEL_PATTERN) out.modelPattern = String(env.DSH_OFFPEAK_MODEL_PATTERN).trim();
+  if (env.DSH_OFFPEAK_PEAK_MODELS !== undefined) {
+    const value = parseList(env.DSH_OFFPEAK_PEAK_MODELS);
+    if (value !== undefined) out.peakPricedModels = value;
+  }
   if (env.DSH_OFFPEAK_EXEMPT_MODELS !== undefined) {
     const value = parseList(env.DSH_OFFPEAK_EXEMPT_MODELS);
     if (value !== undefined) out.exemptModels = value;
@@ -136,6 +147,21 @@ export function envConfig(env = process.env) {
     }
   }
   return out;
+}
+
+async function readJsonBody(req) {
+  let raw = '';
+  for await (const chunk of req) raw += chunk;
+  if (raw === '') return {};
+  return JSON.parse(raw);
+}
+
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.statusCode = status;
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  res.end(body);
 }
 
 export function apply(ctx, rawConfig = {}) {
@@ -170,4 +196,50 @@ export function apply(ctx, rawConfig = {}) {
       }
     };
   }, 'offpeak-guard: tools');
+
+  const webServer = ctx.get('webServer');
+  if (webServer !== undefined && typeof webServer.register === 'function') {
+    ctx.effect(
+      () =>
+        webServer.register({
+          kind: 'prefix',
+          path: '/plugins/dsh-offpeak-guard',
+          async handler(req, res) {
+            try {
+              const url = new URL(req.url || '/', 'http://x');
+              const rest = url.pathname.replace(/^\/plugins\/dsh-offpeak-guard/, '') || '/';
+              if (req.method !== 'POST' || rest !== '/action') {
+                sendJson(res, 404, { ok: false, error: 'not found' });
+                return;
+              }
+              const body = await readJsonBody(req);
+              if (body.action === 'exempt' || body.action === 'unexempt') {
+                const exempt = body.action === 'exempt' ? body.exempt === true : false;
+                const result = await guard.setExempt(String(body.sessionId || ''), exempt);
+                sendJson(res, 200, { ok: true, result });
+                return;
+              }
+              if (body.action === 'model') {
+                const result = await guard.setModelRule(
+                  String(body.provider || ''),
+                  String(body.model || ''),
+                  body.peakPriced === null || body.peakPriced === undefined ? null : body.peakPriced === true,
+                );
+                sendJson(res, 200, { ok: true, result });
+                return;
+              }
+              if (body.action === 'pauseMode') {
+                const result = await guard.setPauseMode(body.mode === 'finish-turn' ? 'finish-turn' : 'pause-now');
+                sendJson(res, 200, { ok: true, result });
+                return;
+              }
+              sendJson(res, 400, { ok: false, error: 'unknown action' });
+            } catch (error) {
+              sendJson(res, 400, { ok: false, error: String(error?.message ?? error) });
+            }
+          },
+        }),
+      'offpeak-guard: settings route',
+    );
+  }
 }

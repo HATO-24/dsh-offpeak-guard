@@ -149,7 +149,7 @@ window.__ModuleLoader__.load({
         };
       }, [load]);
 
-      return { snapshot, error };
+      return { snapshot, error, refresh: load };
     }
 
     function makeStrip(pluginCtx) {
@@ -266,7 +266,7 @@ window.__ModuleLoader__.load({
     }
 
     const clockStyle = `
-.opg-clock{box-sizing:border-box;display:inline-flex;flex:0 0 auto;align-items:center;gap:5px;width:auto;max-width:100%;min-height:32px;margin-left:auto;padding:4px 8px;border-radius:8px;color:var(--dsw-alias-label-primary,#252936);font:500 12px/18px var(--dsw-font-family,system-ui,sans-serif);white-space:nowrap;-webkit-app-region:no-drag;}
+.opg-clock{box-sizing:border-box;display:inline-flex;flex:0 0 auto;align-items:center;gap:5px;width:auto;max-width:100%;min-height:32px;margin-left:auto;padding:4px 8px;border-radius:8px;color:var(--dsw-alias-label-primary,#252936);font:500 12px/18px var(--dsw-font-family,system-ui,sans-serif);white-space:nowrap;-webkit-app-region:no-drag;cursor:pointer;}
 .opg-clock[data-compact="true"]{width:32px;min-height:32px;justify-content:center;padding:6px;gap:0;}
 .opg-clock-dot{flex:none;width:7px;height:7px;border-radius:50%;background:currentColor;}
 .opg-clock-state{flex:none;}
@@ -278,6 +278,27 @@ window.__ModuleLoader__.load({
 @keyframes opg-blink-red{0%,100%{color:#e0554e;opacity:1;}50%{color:#ff8f8a;opacity:.4;}}
 @keyframes opg-blink-green{0%,100%{color:#3f9d7a;opacity:1;}50%{color:#69d3aa;opacity:.4;}}
 @media (prefers-reduced-motion: reduce){.opg-clock[data-blink]{animation:none;}}
+.opg-panel{border:none;border-radius:14px;padding:0;width:min(600px,92vw);max-height:84vh;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#252936);box-shadow:0 24px 80px #0006;font:13px/1.6 var(--dsw-font-family,system-ui,sans-serif);}
+.opg-panel::backdrop{background:#0006;}
+.opg-panel-shell{display:flex;flex-direction:column;max-height:84vh;}
+.opg-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--dsw-alias-border-l1,#dde0e6);}
+.opg-panel-head strong{font-size:15px;}
+.opg-panel-close{border:1px solid var(--dsw-alias-border-l1,#dde0e6);background:transparent;color:inherit;border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit;}
+.opg-panel-body{padding:16px 20px;overflow:auto;}
+.opg-panel-meta{color:var(--dsw-alias-label-secondary,#6c7769);font-size:12px;margin-bottom:14px;}
+.opg-section{margin-bottom:18px;}
+.opg-section h4{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#6c7769);}
+.opg-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--dsw-alias-border-l1,#eef0f3);min-width:0;}
+.opg-row:first-of-type{border-top:0;}
+.opg-row-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.opg-row-sub{color:var(--dsw-alias-label-secondary,#8a8d94);font-size:11px;margin-left:4px;}
+.opg-group-name{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8d94);margin:8px 0 2px;}
+.opg-check{width:15px;height:15px;accent-color:var(--dsw-alias-state-business-primary,#4d6bfe);flex:none;}
+.opg-seg{display:inline-flex;border:1px solid var(--dsw-alias-border-l1,#dde0e6);border-radius:8px;overflow:hidden;}
+.opg-seg button{border:0;background:transparent;color:inherit;padding:5px 10px;font:inherit;cursor:pointer;}
+.opg-seg button[data-active="true"]{background:var(--dsw-alias-state-business-primary,#4d6bfe);color:#fff;}
+.opg-note{color:var(--dsw-alias-label-secondary,#8a8d94);font-size:11px;line-height:1.6;}
+.opg-error{color:#e0554e;font-size:12px;margin-top:8px;}
 `;
 
     function ClockIcon() {
@@ -299,14 +320,187 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function useCatalog(ctx, enabled) {
+      const [groups, setGroups] = React.useState([]);
+      React.useEffect(() => {
+        if (!enabled) return undefined;
+        let alive = true;
+        (async () => {
+          try {
+            const result = await ctx.remote.session.modelCatalog();
+            const list = result?.value?.groups ?? result?.groups ?? [];
+            if (alive && Array.isArray(list)) setGroups(list);
+          } catch {
+            /* 目录不可用时留空 */
+          }
+        })();
+        return () => {
+          alive = false;
+        };
+      }, [enabled]);
+      return groups;
+    }
+
+    function SettingsPanel({ ctx, snapshot, refresh, groups, onClose }) {
+      const [busy, setBusy] = React.useState('');
+      const [error, setError] = React.useState('');
+      const post = async (body) => {
+        setBusy(`${body.action}:${body.sessionId ?? body.provider ?? body.mode ?? ''}`);
+        setError('');
+        try {
+          const response = await fetch('/plugins/dsh-offpeak-guard/action', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const json = await response.json();
+          if (!response.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${response.status}`);
+          await refresh();
+        } catch (caught) {
+          setError(String(caught?.message ?? caught));
+        } finally {
+          setBusy('');
+        }
+      };
+      const modelManaged = (provider, model) => {
+        const key = `${provider}/${model}`;
+        if (Object.prototype.hasOwnProperty.call(snapshot.modelRules ?? {}, key)) return snapshot.modelRules[key] === true;
+        if ((snapshot.peakPricedModels ?? []).length > 0) {
+          return snapshot.peakPricedModels.includes(key) || snapshot.peakPricedModels.includes(model);
+        }
+        if ((snapshot.exemptModels ?? []).includes(model)) return false;
+        const needle = String(snapshot.modelPattern ?? 'deepseek').toLowerCase();
+        return model.toLowerCase().includes(needle) || provider.toLowerCase().includes(needle);
+      };
+      const sessions = Object.values(snapshot.sessions ?? {});
+      return h('div', { className: 'opg-panel-shell' }, [
+        h('div', { className: 'opg-panel-head', key: 'head' }, [
+          h('strong', { key: 'title' }, '峰谷守卫设置'),
+          h('button', { key: 'close', className: 'opg-panel-close', onClick: onClose }, '关闭'),
+        ]),
+        h('div', { className: 'opg-panel-body', key: 'body' }, [
+          h(
+            'div',
+            { className: 'opg-panel-meta', key: 'meta' },
+            `${snapshot.presetLabel ?? ''} · ${snapshot.phaseLabel ?? ''} · ${snapshot.holiday ? '今天法定节假日（全天谷价）' : '按工作日峰时'}`,
+          ),
+          h('div', { className: 'opg-section', key: 'mode' }, [
+            h('h4', { key: 'h' }, '峰时策略'),
+            h('div', { className: 'opg-seg' }, [
+              h(
+                'button',
+                {
+                  key: 'now',
+                  'data-active': snapshot.pauseMode !== 'finish-turn' ? 'true' : 'false',
+                  disabled: busy !== '',
+                  onClick: () => post({ action: 'pauseMode', mode: 'pause-now' }),
+                },
+                '立即暂停',
+              ),
+              h(
+                'button',
+                {
+                  key: 'finish',
+                  'data-active': snapshot.pauseMode === 'finish-turn' ? 'true' : 'false',
+                  disabled: busy !== '',
+                  onClick: () => post({ action: 'pauseMode', mode: 'finish-turn' }),
+                },
+                '完成当前轮后暂停',
+              ),
+            ]),
+            h('div', { className: 'opg-note', key: 'note' }, '有子代理在运行时，会先放行子代理；子代理结束后再暂停父会话。'),
+          ]),
+          h('div', { className: 'opg-section', key: 'models' }, [
+            h('h4', { key: 'h' }, '模型管理（精确到 provider/model）'),
+            groups.length === 0
+              ? h('div', { className: 'opg-note', key: 'empty' }, '模型目录暂不可用；仍可在配置里用 modelPattern / exemptModels 管理。')
+              : groups.map((group) =>
+                  h('div', { key: `g:${group.id}` }, [
+                    h('div', { className: 'opg-group-name', key: 'name' }, group.name ?? group.id),
+                    ...(Array.isArray(group.models) ? group.models : []).map((model) =>
+                      h('label', { className: 'opg-row', key: `m:${group.id}/${model.id}` }, [
+                        h('input', {
+                          className: 'opg-check',
+                          type: 'checkbox',
+                          checked: modelManaged(String(group.id), String(model.id)),
+                          disabled: busy !== '',
+                          onChange: (event) =>
+                            post({
+                              action: 'model',
+                              provider: String(group.id),
+                              model: String(model.id),
+                              peakPriced: event.target.checked,
+                            }),
+                        }),
+                        h('span', { className: 'opg-row-label' }, [
+                          model.name ?? model.id,
+                          h('span', { className: 'opg-row-sub', key: 'id' }, model.id),
+                        ]),
+                      ]),
+                    ),
+                  ]),
+                ),
+          ]),
+          h('div', { className: 'opg-section', key: 'sessions' }, [
+            h('h4', { key: 'h' }, '会话豁免（不参与暂停/恢复）'),
+            sessions.length === 0
+              ? h('div', { className: 'opg-note', key: 'empty' }, '当前没有运行中的根会话。')
+              : sessions.map((session) =>
+                  h('label', { className: 'opg-row', key: `s:${session.id}` }, [
+                    h('input', {
+                      className: 'opg-check',
+                      type: 'checkbox',
+                      checked: session.exempt === true,
+                      disabled: busy !== '',
+                      onChange: (event) =>
+                        post({ action: 'exempt', sessionId: String(session.id), exempt: event.target.checked }),
+                    }),
+                    h('span', { className: 'opg-row-label' }, [
+                      session.title ?? session.id,
+                      h('span', { className: 'opg-row-sub', key: 'model' }, session.id),
+                    ]),
+                  ]),
+                ),
+          ]),
+          h('div', { className: 'opg-section', key: 'holidays' }, [
+            h('h4', { key: 'h' }, '节假日'),
+            h(
+              'div',
+              { className: 'opg-note', key: 'note' },
+              snapshot.holidaySource === 'auto'
+                ? `动态识别：已同步（${snapshot.holidaySyncedAt ? new Date(snapshot.holidaySyncedAt).toLocaleString() : '尚未同步'}），失败时回退内置 2026 列表。`
+                : '使用内置节假日（可在配置 holidays 追加）。',
+            ),
+          ]),
+          error === '' ? null : h('div', { className: 'opg-error', key: 'error' }, error),
+        ]),
+      ]);
+    }
+
     function makeClock(pluginCtx) {
       return function Clock(props) {
         const t = useLocale(pluginCtx);
-        const { snapshot } = useSnapshot(pluginCtx, null);
+        const { snapshot, refresh } = useSnapshot(pluginCtx, null);
+        const [open, setOpen] = React.useState(false);
+        const dialogRef = React.useRef(null);
+        const groups = useCatalog(pluginCtx, open);
         const [, force] = React.useState(0);
         React.useEffect(() => {
           const timer = setInterval(() => force((value) => value + 1), 1000);
           return () => clearInterval(timer);
+        }, []);
+        React.useEffect(() => {
+          const dialog = dialogRef.current;
+          if (dialog === null) return;
+          if (open && !dialog.open) dialog.showModal();
+          if (!open && dialog.open) dialog.close();
+        }, [open]);
+        React.useEffect(() => {
+          const dialog = dialogRef.current;
+          if (dialog === null) return undefined;
+          const onClose = () => setOpen(false);
+          dialog.addEventListener('close', onClose);
+          return () => dialog.removeEventListener('close', onClose);
         }, []);
         if (snapshot === null) return null;
 
@@ -335,6 +529,7 @@ window.__ModuleLoader__.load({
           t('offpeakNote'),
           `${t('model')}: ${modelId || '—'}`,
           t('clockHint'),
+          '点击打开设置 / Click to open settings',
         ]
           .filter(Boolean)
           .join('\n');
@@ -347,7 +542,7 @@ window.__ModuleLoader__.load({
             ]
           : [ClockIcon()];
 
-        return h(
+        const clock = h(
           'div',
           {
             className: 'opg-clock',
@@ -357,9 +552,31 @@ window.__ModuleLoader__.load({
             'data-tone': tone,
             'data-blink': blink ?? undefined,
             'data-compact': wide ? 'false' : 'true',
+            onClick: () => setOpen(true),
           },
           [h('style', { key: 'style' }, clockStyle)].concat(inner),
         );
+        const dialog = h(
+          'dialog',
+          {
+            key: 'dialog',
+            ref: dialogRef,
+            className: 'opg-panel',
+            onClick: (event) => {
+              if (event.target === event.currentTarget) setOpen(false);
+            },
+          },
+          open
+            ? h(SettingsPanel, {
+                ctx: pluginCtx,
+                snapshot,
+                refresh,
+                groups,
+                onClose: () => setOpen(false),
+              })
+            : null,
+        );
+        return h(React.Fragment, null, [clock, dialog]);
       };
     }
 

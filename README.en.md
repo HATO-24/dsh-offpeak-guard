@@ -7,8 +7,10 @@ Published on npm: install it from the DSH Plugins page, or run
 
 Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
 
-- **Time awareness**: per DeepSeek's official pricing, Beijing-time weekdays (excluding Chinese statutory holidays) `09:00–12:00` and `14:00–18:00` are peak; every other hour (weekends, holidays, lunch, night) is off-peak at 50%. Built-in Chinese holidays cover 2026; add later years with `holidays`.
-- **Model awareness**: only sessions using a peak-priced model (model name contains `deepseek` by default; exempt models one by one with `exemptModels`) are paused/resumed. Other models are untouched.
+- **Time awareness**: per DeepSeek's official pricing, Beijing-time weekdays (excluding Chinese statutory holidays) `09:00–12:00` and `14:00–18:00` are peak; every other hour (weekends, holidays, lunch, night) is off-peak at 50%. Holidays sync from a public API with a built-in 2026 fallback.
+- **Model awareness**: exact `provider / model` detection; models containing `deepseek` are managed by default, and the settings panel can toggle each model. `peakPricedModels` / `exemptModels` provide exact control.
+- **Peak strategy**: choose immediate pause or finish the current turn first; if a session has running subagents, they are allowed to finish and the parent is paused afterwards, then resumed at off-peak.
+- **Session exemptions**: exempt any session from the guard (settings panel or `offpeak_guard exempt/unexempt`), and un-exempt it at any time.
 - **Work planning**:
   - peak starts → running tasks are paused (the pending inbox is kept, no message is lost);
   - a task started during peak → stopped immediately, no peak-priced tokens spent;
@@ -26,6 +28,10 @@ Red blink within the alert window before peak (sample):
 
 ![Sidebar clock blinking red](docs/sidebar-clock-blink.png)
 
+Click the clock to open the settings panel:
+
+![Settings panel](docs/settings-panel.png)
+
 ## Tools
 
 | Tool | Purpose |
@@ -42,12 +48,16 @@ The `offpeak-guard` row's `config` in `cordis.patch.yml`, or the plugin settings
 | --- | --- | --- |
 | `enabled` | `true` | Master switch |
 | `preset` | `auto` | `auto` picks by provider: WorkBuddy/CodeBuddy → `workbuddy`, otherwise `deepseek-official`; can be pinned to `deepseek-official` / `workbuddy` / `custom` |
+| `pauseMode` | `pause-now` | `pause-now` pauses immediately; `finish-turn` pauses after the current turn |
 | `timezone` | `Asia/Shanghai` | Pricing time zone (DeepSeek bills in Beijing time) |
 | `peakWeekdays` | `[1,2,3,4,5]` | Weekdays with peak windows (0 = Sunday); only used by `custom` |
 | `peakWindows` | 09:00–12:00, 14:00–18:00 | Peak windows; only used by `custom` |
 | `discount` | `0.5` | Off-peak discount, display only; only used by `custom` |
-| `holidays` | `[]` | Extra statutory holidays (`YYYY-MM-DD`), appended to the built-in 2026 list for the official/WorkBuddy presets |
-| `modelPattern` | `deepseek` | Model/provider name containing it counts as peak-priced |
+| `holidays` | `[]` | Extra statutory holidays (`YYYY-MM-DD`) appended to synced/built-in dates |
+| `holidaySource` | `auto` | `auto` syncs from the public holiday API; `builtin` stays offline |
+| `holidayApi` | timor.tech | Dynamic holiday API prefix |
+| `modelPattern` | `deepseek` | Fallback match when no exact model list is set |
+| `peakPricedModels` | `[]` | Exact peak-priced models (`provider/model` or `model`); takes priority over `modelPattern` |
 | `exemptModels` | `[]` | Model ids exempted one by one |
 | `pauseRunningOnPeak` | `true` | Pause running tasks when peak starts |
 | `deferNewTurnsOnPeak` | `true` | Stop tasks started during peak immediately |
@@ -65,12 +75,16 @@ Deployments can inject settings with environment variables. Priority: **env > co
 | --- | --- | --- |
 | `DSH_OFFPEAK_ENABLED` | `0` / `1` | `enabled` |
 | `DSH_OFFPEAK_PRESET` | `custom` | `preset` |
+| `DSH_OFFPEAK_PAUSE_MODE` | `finish-turn` | `pauseMode` |
 | `DSH_OFFPEAK_TIMEZONE` | `Asia/Shanghai` | `timezone` |
 | `DSH_OFFPEAK_PEAK_WEEKDAYS` | `1,2,3,4,5` | `peakWeekdays` |
 | `DSH_OFFPEAK_PEAK_WINDOWS` | `09:00-12:00,14:00-18:00` | `peakWindows` |
 | `DSH_OFFPEAK_DISCOUNT` | `0.5` | `discount` |
 | `DSH_OFFPEAK_HOLIDAYS` | `2026-10-01,2026-10-02` | `holidays` |
+| `DSH_OFFPEAK_HOLIDAY_SOURCE` | `builtin` | `holidaySource` |
+| `DSH_OFFPEAK_HOLIDAY_API` | `https://.../year` | `holidayApi` |
 | `DSH_OFFPEAK_MODEL_PATTERN` | `deepseek` | `modelPattern` |
+| `DSH_OFFPEAK_PEAK_MODELS` | `deepseek-flash,vendor/model` | `peakPricedModels` |
 | `DSH_OFFPEAK_EXEMPT_MODELS` | `deepseek-v4-pro,deepseek-flash` | `exemptModels` |
 | `DSH_OFFPEAK_PAUSE_RUNNING` | `0` / `1` | `pauseRunningOnPeak` |
 | `DSH_OFFPEAK_DEFER_NEW` | `0` / `1` | `deferNewTurnsOnPeak` |
@@ -87,12 +101,28 @@ Deployments can inject settings with environment variables. Priority: **env > co
 - `custom`: use `peakWeekdays` / `peakWindows` / `discount` / `holidays` exactly, for other providers or self-hosted pricing.
 
 
+## Settings panel
+
+Click the sidebar clock:
+
+- **Peak strategy**: pause immediately or finish the current turn first;
+- **Models**: provider-grouped catalog with a checkbox per model (persisted as `modelRules`, overriding `modelPattern`);
+- **Session exemptions**: exempt/un-exempt live root sessions;
+- **Holidays**: show the dynamic sync state.
+
+## Subagents and waiting
+
+- Running subagents are allowed to finish; the parent is paused after the last child ends and resumed off-peak;
+- In `finish-turn` mode the current turn finishes; a queued next turn is stopped and recorded;
+- A finished turn is marked `completed`, so no spurious turn is started at off-peak.
+
 ## Data
 
 State and snapshots live in `$DSH_HOME/offpeak-guard/`:
 
-- `state.json`: paused tasks, off-peak plans, last phase;
-- `status.json`: read-only snapshot for the UI (mirrored to `~/.dsh/offpeak-guard/status.json`).
+- `state.json`: paused/waiting tasks, plans, session exemptions, exact model rules, peak strategy;
+- `status.json`: read-only snapshot for the UI (mirrored to `~/.dsh/offpeak-guard/status.json`);
+- `holidays.json`: cached dynamic holiday dates.
 
 Nothing is written into user workspaces.
 
@@ -102,8 +132,11 @@ Pause uses `sessionController.cancel`, which ends only the current turn and keep
 
 ## Boundaries
 
-- Built-in statutory holidays cover 2026 only; after the 2027 schedule is published, upgrade the plugin or append dates with `holidays` / `DSH_OFFPEAK_HOLIDAYS`, otherwise holidays are treated as ordinary weekdays.
+- Dynamic holidays come from a third-party public API (default timor.tech; only the year is sent). Offline failures fall back to the `holidays.json` cache and the built-in 2026 list; set `holidaySource: builtin` for fully offline operation.
+- Built-in statutory holidays cover 2026 only; the dynamic sync fills later years once published, or append dates with `holidays`.
 - Named presets have fixed windows; use `preset: custom` for other providers or self-hosted pricing.
 - Only root sessions with a working directory are handled; subagent sessions are skipped so parents do not hang.
+- Subagent results are consumed by the parent after it resumes; the guard stops the parent at child completion but cannot intercept messages already written into the parent history.
+- A session exemption affects future pauses/resumes only; use `resume_now` to resume an already paused session.
 - A plugin restart does not cancel tasks that are already running (so installing the plugin cannot kill the current conversation); the next peak or new task follows the rules again.
 - Manual `resume_now` grants those sessions a 10-minute grace period so they are not paused again immediately.

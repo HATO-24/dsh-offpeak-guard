@@ -124,23 +124,42 @@ test('按 provider 自动选预设', () => {
 test('环境变量覆盖配置', () => {
   const env = envConfig({
     DSH_OFFPEAK_PRESET: 'custom',
+    DSH_OFFPEAK_PAUSE_MODE: 'finish-turn',
     DSH_OFFPEAK_TIMEZONE: 'Asia/Tokyo',
     DSH_OFFPEAK_PEAK_WEEKDAYS: '1,3,5',
     DSH_OFFPEAK_PEAK_WINDOWS: '08:00-10:00, 15:00-17:00',
+    DSH_OFFPEAK_PEAK_MODELS: 'deepseek-flash,workbuddy/deepseek-v4-pro',
     DSH_OFFPEAK_EXEMPT_MODELS: 'deepseek-v4-pro, deepseek-flash',
     DSH_OFFPEAK_ALERT_MINUTES: '3',
     DSH_OFFPEAK_PAUSE_RUNNING: '0',
+    DSH_OFFPEAK_HOLIDAY_SOURCE: 'builtin',
   });
   assert.equal(env.preset, 'custom');
+  assert.equal(env.pauseMode, 'finish-turn');
   assert.equal(env.timezone, 'Asia/Tokyo');
   assert.deepEqual(env.peakWeekdays, [1, 3, 5]);
   assert.deepEqual(env.peakWindows, [
     { start: '08:00', end: '10:00' },
     { start: '15:00', end: '17:00' },
   ]);
+  assert.deepEqual(env.peakPricedModels, ['deepseek-flash', 'workbuddy/deepseek-v4-pro']);
   assert.deepEqual(env.exemptModels, ['deepseek-v4-pro', 'deepseek-flash']);
   assert.equal(env.alertMinutes, 3);
   assert.equal(env.pauseRunningOnPeak, false);
+  assert.equal(env.holidaySource, 'builtin');
+});
+
+test('状态文件保留会话豁免与精确模型规则', async () => {
+  const { normalizeState } = await import('../lib/store.js');
+  const state = normalizeState({
+    exemptSessions: { 'session-a': { title: '别动我', at: 1 } },
+    modelRules: { 'deepseek-account/deepseek-flash': false, 'vendor/model': true },
+    settings: { pauseMode: 'finish-turn' },
+  });
+  assert.equal(state.exemptSessions['session-a'].title, '别动我');
+  assert.equal(state.modelRules['deepseek-account/deepseek-flash'], false);
+  assert.equal(state.modelRules['vendor/model'], true);
+  assert.equal(state.settings.pauseMode, 'finish-turn');
 });
 
 test('nextPhaseStart 能跳过午餐谷价找到下一次峰时', () => {
