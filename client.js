@@ -131,6 +131,8 @@ window.__ModuleLoader__.load({
           if (mounted.current && parsed !== null && typeof parsed === 'object') {
             setSnapshot(parsed);
             setError(null);
+            sharedStatus.snapshot = parsed;
+            for (const listener of sharedStatus.listeners) listener();
           }
         } catch (caught) {
           if (mounted.current) setError(String(caught?.message ?? caught));
@@ -152,12 +154,96 @@ window.__ModuleLoader__.load({
       return { snapshot, error, refresh: load };
     }
 
+    const sharedStatus = { snapshot: null, listeners: new Set(), timer: null, loading: false, ctx: null };
+
+    async function readSharedStatus(ctx) {
+      const remote = ctx.remote;
+      if (!remote || typeof remote.session?.list !== 'function' || typeof remote.workspaceFiles?.read !== 'function') return null;
+      const listed = await remote.session.list({});
+      const items = listed?.value?.items ?? listed?.items ?? [];
+      if (!Array.isArray(items) || items.length === 0) return null;
+      const sorted = [...items].sort(
+        (left, right) => Number(right.updatedAt ?? right.lastActivityAt ?? 0) - Number(left.updatedAt ?? left.lastActivityAt ?? 0),
+      );
+      const home = remote.$host?.home;
+      if (typeof home !== 'string' || home.length === 0) return null;
+      const candidates = sorted
+        .filter((item) => item?.parentSession === undefined && item?.parentSessionId === undefined)
+        .map((item) => item?.sessionId ?? item?.id)
+        .filter((id) => typeof id === 'string' && id.length > 0)
+        .slice(0, 5);
+      for (const sessionId of candidates) {
+        try {
+          const result = await remote.workspaceFiles.read(sessionId, `${home}/.dsh/offpeak-guard/status.json`, {});
+          const parsed = JSON.parse(snapshotTextOf(result));
+          if (parsed !== null && typeof parsed === 'object') return parsed;
+        } catch {
+          /* 换下一个最近会话再试 */
+        }
+      }
+      return null;
+    }
+
+    async function loadSharedStatus(ctx) {
+      if (sharedStatus.loading) return;
+      sharedStatus.loading = true;
+      try {
+        const snapshot = await readSharedStatus(ctx);
+        if (snapshot !== null) {
+          sharedStatus.snapshot = snapshot;
+          for (const listener of sharedStatus.listeners) listener();
+        }
+      } catch {
+        /* 状态文件尚未生成时保持旧值 */
+      } finally {
+        sharedStatus.loading = false;
+      }
+    }
+
+    function ensureSharedStatus(ctx) {
+      sharedStatus.ctx = ctx;
+      if (sharedStatus.timer !== null) return;
+      void loadSharedStatus(ctx);
+      sharedStatus.timer = setInterval(() => void loadSharedStatus(ctx), 30000);
+    }
+
+    function useSharedStatus(ctx) {
+      const [, force] = React.useState(0);
+      React.useEffect(() => {
+        const listener = () => force((value) => value + 1);
+        sharedStatus.listeners.add(listener);
+        ensureSharedStatus(ctx);
+        return () => {
+          sharedStatus.listeners.delete(listener);
+          if (sharedStatus.listeners.size === 0 && sharedStatus.timer !== null) {
+            clearInterval(sharedStatus.timer);
+            sharedStatus.timer = null;
+          }
+        };
+      }, []);
+      return sharedStatus.snapshot;
+    }
+
+    async function postAction(body) {
+      const response = await fetch('/plugins/dsh-offpeak-guard/action', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await response.json();
+      if (!response.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${response.status}`);
+      if (sharedStatus.ctx !== null) await loadSharedStatus(sharedStatus.ctx);
+      return json;
+    }
+
     function makeStrip(pluginCtx) {
       return function Strip(props) {
         const ctx = pluginCtx;
         const t = useLocale(ctx);
-      const { snapshot, error } = useSnapshot(ctx, props?.sessionId);
-      const [, force] = React.useState(0);
+        const { snapshot, error, refresh } = useSnapshot(ctx, props?.sessionId);
+        const [busy, setBusy] = React.useState(false);
+        const [, force] = React.useState(0);
 
       React.useEffect(() => {
         const timer = setInterval(() => force((value) => value + 1), 1000);
@@ -218,6 +304,38 @@ window.__ModuleLoader__.load({
       if (modelId !== '') children.push(h('span', { key: 'model', style: { opacity: 0.75 } }, `· ${modelId}`));
       if (paused > 0) children.push(h('span', { key: 'paused', style: { color: '#e0a33e' } }, `· ${t('paused')} ${paused}`));
       if (plans > 0) children.push(h('span', { key: 'plans' }, `· ${t('plans')} ${plans}`));
+      const currentSessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
+      const currentExempt =
+        currentSessionId !== '' &&
+        (snapshot.exemptSessions ?? []).some((item) => item.sessionId === currentSessionId);
+      if (currentSessionId !== '') {
+        children.push(
+          h(
+            'button',
+            {
+              key: 'exempt',
+              type: 'button',
+              className: 'opg-exempt',
+              'data-exempt': currentExempt ? 'true' : undefined,
+              disabled: busy,
+              title: currentExempt ? '取消本会话的峰谷豁免' : '让本会话豁免峰谷守卫（不暂停/不恢复）',
+              onClick: async (event) => {
+                event.stopPropagation();
+                setBusy(true);
+                try {
+                  await postAction({ action: 'exempt', sessionId: currentSessionId, exempt: !currentExempt });
+                  await refresh();
+                } catch {
+                  /* 下一次点击重试 */
+                } finally {
+                  setBusy(false);
+                }
+              },
+            },
+            [h(ShieldIcon, { key: 'icon', active: currentExempt }), currentExempt ? '取消豁免' : '豁免本会话'],
+          ),
+        );
+      }
 
       return h(
         'div',
@@ -299,6 +417,13 @@ window.__ModuleLoader__.load({
 .opg-seg button[data-active="true"]{background:var(--dsw-alias-state-business-primary,#4d6bfe);color:#fff;}
 .opg-note{color:var(--dsw-alias-label-secondary,#8a8d94);font-size:11px;line-height:1.6;}
 .opg-error{color:#e0554e;font-size:12px;margin-top:8px;}
+.opg-row-action{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#6c7769);cursor:pointer;padding:0;}
+.opg-row-action:hover{background:var(--dsw-alias-interactive-bg-hover,#4d6bfe12);color:var(--dsw-alias-label-primary,#252936);}
+.opg-row-action[data-exempt="true"]{color:#e0554e;}
+.opg-trail{display:inline-flex;align-items:center;justify-content:center;flex:none;color:#e0554e;opacity:.85;}
+.opg-exempt{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l1,#dde0e6);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#6c7769);font:11px/16px var(--dsw-font-family,system-ui,sans-serif);padding:1px 6px;cursor:pointer;white-space:nowrap;}
+.opg-exempt[data-exempt="true"]{color:#e0554e;border-color:#e0554e66;}
+.opg-exempt:hover{border-color:var(--dsw-alias-label-secondary,#8a8d94);}
 `;
 
     function ClockIcon() {
@@ -344,12 +469,14 @@ window.__ModuleLoader__.load({
     function SettingsPanel({ ctx, snapshot, refresh, groups, onClose }) {
       const [busy, setBusy] = React.useState('');
       const [error, setError] = React.useState('');
+      const [query, setQuery] = React.useState('');
       const post = async (body) => {
         setBusy(`${body.action}:${body.sessionId ?? body.provider ?? body.mode ?? ''}`);
         setError('');
         try {
           const response = await fetch('/plugins/dsh-offpeak-guard/action', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
           });
@@ -372,7 +499,11 @@ window.__ModuleLoader__.load({
         const needle = String(snapshot.modelPattern ?? 'deepseek').toLowerCase();
         return model.toLowerCase().includes(needle) || provider.toLowerCase().includes(needle);
       };
-      const sessions = Object.values(snapshot.sessions ?? {});
+      const sessions = Object.values(snapshot.sessions ?? {}).filter((session) => {
+        if (query.trim() === '') return true;
+        const needle = query.trim().toLowerCase();
+        return String(session.title ?? '').toLowerCase().includes(needle) || String(session.id).toLowerCase().includes(needle);
+      });
       return h('div', { className: 'opg-panel-shell' }, [
         h('div', { className: 'opg-panel-head', key: 'head' }, [
           h('strong', { key: 'title' }, '峰谷守卫设置'),
@@ -443,8 +574,26 @@ window.__ModuleLoader__.load({
           ]),
           h('div', { className: 'opg-section', key: 'sessions' }, [
             h('h4', { key: 'h' }, '会话豁免（不参与暂停/恢复）'),
+            h('input', {
+              key: 'search',
+              type: 'search',
+              value: query,
+              placeholder: '按标题或 session id 过滤…',
+              onChange: (event) => setQuery(event.target.value),
+              style: {
+                width: '100%',
+                boxSizing: 'border-box',
+                margin: '0 0 6px',
+                padding: '5px 8px',
+                border: '1px solid var(--dsw-alias-border-l1,#dde0e6)',
+                borderRadius: '7px',
+                background: 'transparent',
+                color: 'inherit',
+                font: 'inherit',
+              },
+            }),
             sessions.length === 0
-              ? h('div', { className: 'opg-note', key: 'empty' }, '当前没有运行中的根会话。')
+              ? h('div', { className: 'opg-note', key: 'empty' }, '没有匹配的运行中根会话。')
               : sessions.map((session) =>
                   h('label', { className: 'opg-row', key: `s:${session.id}` }, [
                     h('input', {
@@ -475,6 +624,69 @@ window.__ModuleLoader__.load({
           error === '' ? null : h('div', { className: 'opg-error', key: 'error' }, error),
         ]),
       ]);
+    }
+
+    function ShieldIcon({ active }) {
+      return h(
+        'svg',
+        {
+          width: 15,
+          height: 15,
+          viewBox: '0 0 24 24',
+          fill: active ? 'currentColor' : 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.8,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': true,
+        },
+        [h('path', { key: 'p', d: 'M12 3l7 3v5c0 4.4-2.9 8.1-7 10-4.1-1.9-7-5.6-7-10V6z' })],
+      );
+    }
+
+    function makeRowAction(pluginCtx) {
+      return function RowAction(props) {
+        const snapshot = useSharedStatus(pluginCtx);
+        const [busy, setBusy] = React.useState(false);
+        const sessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
+        if (sessionId === '') return null;
+        const exempt = (snapshot?.exemptSessions ?? []).some((item) => item.sessionId === sessionId);
+        return h(
+          'button',
+          {
+            type: 'button',
+            className: 'opg-row-action',
+            title: exempt ? '取消峰谷豁免' : '本会话豁免峰谷守卫',
+            'aria-label': exempt ? '取消峰谷豁免' : '本会话豁免峰谷守卫',
+            'aria-pressed': exempt,
+            'data-exempt': exempt ? 'true' : undefined,
+            disabled: busy,
+            onClick: async (event) => {
+              event.stopPropagation();
+              setBusy(true);
+              try {
+                await postAction({ action: 'exempt', sessionId, exempt: !exempt });
+              } catch {
+                /* 状态文件/路由暂不可用时静默，下一次点击重试 */
+              } finally {
+                setBusy(false);
+              }
+            },
+          },
+          h(ShieldIcon, { active: exempt }),
+        );
+      };
+    }
+
+    function makeTrailing(pluginCtx) {
+      return function Trailing(props) {
+        const snapshot = useSharedStatus(pluginCtx);
+        const sessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
+        if (snapshot === null || sessionId === '') return null;
+        const exempt = (snapshot.exemptSessions ?? []).some((item) => item.sessionId === sessionId);
+        if (!exempt) return null;
+        return h('span', { className: 'opg-trail', title: '峰谷豁免中', 'aria-hidden': true }, h(ShieldIcon, { active: true }));
+      };
     }
 
     function makeClock(pluginCtx) {
@@ -604,6 +816,28 @@ window.__ModuleLoader__.load({
               order: 45,
             },
             Clock,
+          ),
+        );
+        const RowAction = makeRowAction(ctx);
+        const Trail = makeTrailing(ctx);
+        ctx.slots.inject('sidebar.workspaces.session.row.action', () =>
+          ctx.slots.register(
+            {
+              name: 'sidebar.workspaces.session.row.action',
+              id: 'offpeak-guard-exempt',
+              order: 150,
+            },
+            RowAction,
+          ),
+        );
+        ctx.slots.inject('sidebar.session.row.trailing', () =>
+          ctx.slots.register(
+            {
+              name: 'sidebar.session.row.trailing',
+              id: 'offpeak-guard-exempt-trail',
+              order: 20,
+            },
+            Trail,
           ),
         );
       },

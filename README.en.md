@@ -16,7 +16,7 @@ Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
   - a task started during peak → stopped immediately, no peak-priced tokens spent;
   - off-peak starts → interrupted tasks are handed back to their session automatically;
   - the `offpeak_plan` tool queues "run this at noon" work for the next off-peak window.
-- **UI**: a status strip under the composer (state, countdown, model, paused/planned counts), plus a compact clock at the sidebar foot that blinks red before peak starts and green before off-peak starts.
+- **UI**: a status strip under the composer (state, countdown, model, paused/planned counts), plus a compact clock at the sidebar foot that blinks red before peak starts and green before off-peak starts. Click the clock to open settings. Hover a session row in the left sidebar for a shield button to exempt/un-exempt it; exempt rows keep a shield marker, and the composer strip has an **Exempt this session** toggle.
 
 ![Status strip under the composer](docs/peak-strip.png)
 
@@ -103,11 +103,11 @@ Deployments can inject settings with environment variables. Priority: **env > co
 
 ## Settings panel
 
-Click the sidebar clock:
+Click the sidebar clock to open it:
 
 - **Peak strategy**: pause immediately or finish the current turn first;
 - **Models**: provider-grouped catalog with a checkbox per model (persisted as `modelRules`, overriding `modelPattern`);
-- **Session exemptions**: exempt/un-exempt live root sessions;
+- **Session exemptions**: searchable list of live root sessions; hover a session row in the left sidebar for a shield button, or use the **Exempt this session** button in the composer strip to toggle the current conversation directly;
 - **Holidays**: show the dynamic sync state.
 
 ## Subagents and waiting
