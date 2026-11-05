@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-11-05
+
+- 默认规则改为 DeepSeek 官方峰谷：工作日 09:00–12:00、14:00–18:00 峰时，周末与**中国法定节假日全天**谷价；内置 2026 年节假日列表。
+- 新增 `preset`：`auto` / `deepseek-official` / `workbuddy` / `custom`，按 provider 自动选择（WorkBuddy/CodeBuddy → workbuddy，其余 → 官方）。
+- 新增 `Config` schema：DSH 设置页可直接修改时区、窗口、豁免模型、提醒阈值等。
+- 新增 `DSH_OFFPEAK_*` 环境变量覆盖（优先级：环境变量 > 配置 > 默认），便于部署方统一注入。
+- 状态工具与界面显示当前规则和节假日状态。
+
 ## 0.1.0 — 2026-11-05
 
 - 首个公开版本。

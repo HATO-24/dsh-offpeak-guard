@@ -1,6 +1,6 @@
 {
   "name": "dsh-offpeak-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DeepSeek peak/off-peak pricing guard for DSH: detects the price window and current model, pauses running tasks at peak, resumes them automatically when off-peak begins, and schedules work for the next off-peak window.",
   "private": false,
   "type": "module",
@@ -55,6 +55,9 @@
   "engines": {
     "node": ">=22.5",
     "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5"
   },
   "dsh": {
     "bundle": {

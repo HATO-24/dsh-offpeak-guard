@@ -1,12 +1,19 @@
 # dsh-offpeak-guard：DeepSeek 峰谷计价守卫。
-# 规则来自 DeepSeek 夜间折扣：工作日 09:00–12:00、14:00–18:00 为峰值原价，
-# 其余时间（含午间、夜间与周末）为谷价，按 5 折计费。
-# 官方调价时只改这里的 peakWindows / discount 即可。
+# 默认按 DeepSeek 官方「模型 & 价格」规则：
+#   北京时间周一至周五（不含中国法定节假日）09:00–12:00、14:00–18:00 为高峰；
+#   其余时段（含周末、法定节假日全天）为空闲，空闲价为高峰价的一半。
+# preset:
+#   auto              按 provider 自动选（WorkBuddy/CodeBuddy 走 workbuddy，其余走 deepseek-official）
+#   deepseek-official 官方规则（含内置 2026 法定节假日）
+#   workbuddy         WorkBuddy 积分规则（时段相同）
+#   custom            用下面 peakWeekdays / peakWindows / discount / holidays
+# 环境变量（部署方注入，优先级高于本文件）：DSH_OFFPEAK_*，详见 README。
 - insert:
     - id: offpeak-guard
       name: 'dsh-offpeak-guard'
       config:
         enabled: true
+        preset: 'auto'
         timezone: 'Asia/Shanghai'
         peakWeekdays: [1, 2, 3, 4, 5]
         peakWindows:
@@ -15,6 +22,7 @@
           - start: '14:00'
             end: '18:00'
         discount: 0.5
+        holidays: []
         modelPattern: 'deepseek'
         exemptModels: []
         pauseRunningOnPeak: true
