@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Off-peak guard">
+  <defs>
+    <linearGradient id="offpeak-arc" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e0a33e"/>
+      <stop offset="1" stop-color="#3f9d7a"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#1f2329"/>
+  <circle cx="32" cy="33" r="16.5" fill="none" stroke="url(#offpeak-arc)" stroke-width="3"/>
+  <path d="M32 33V23" fill="none" stroke="#f4f5f7" stroke-width="3" stroke-linecap="round"/>
+  <path d="M32 33l7.5 4.6" fill="none" stroke="#f4f5f7" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="32" cy="33" r="2.6" fill="url(#offpeak-arc)"/>
+  <path d="M46.5 14.5l1.6 3.4 3.4 1.6-3.4 1.6-1.6 3.4-1.6-3.4-3.4-1.6 3.4-1.6z" fill="#e0a33e"/>
+  <path d="M17 49.5a5.4 5.4 0 0 1 0-10.8 6.6 6.6 0 0 0 0 10.8z" fill="#3f9d7a"/>
+</svg>

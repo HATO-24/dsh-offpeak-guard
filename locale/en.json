@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Off-peak guard",
+    "description": "Watches DeepSeek peak/off-peak pricing and the current model: pauses running tasks and defers new ones at peak, then resumes interrupted tasks automatically when off-peak begins. Also schedules work for the next off-peak window."
+  }
+}

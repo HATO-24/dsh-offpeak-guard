@@ -1,0 +1,71 @@
+{
+  "name": "dsh-offpeak-guard",
+  "version": "0.1.0",
+  "description": "DeepSeek peak/off-peak pricing guard for DSH: detects the price window and current model, pauses running tasks at peak, resumes them automatically when off-peak begins, and schedules work for the next off-peak window.",
+  "private": false,
+  "type": "module",
+  "main": "index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/*.png"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "off-peak",
+    "peak",
+    "pricing",
+    "scheduler",
+    "cordis",
+    "time"
+  ],
+  "author": "HATO-24",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HATO-24/dsh-offpeak-guard.git"
+  },
+  "homepage": "https://github.com/HATO-24/dsh-offpeak-guard#readme",
+  "bugs": {
+    "url": "https://github.com/HATO-24/dsh-offpeak-guard/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.5",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
