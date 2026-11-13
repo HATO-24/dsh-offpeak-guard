@@ -110,6 +110,15 @@ Click the sidebar clock to open it:
 - **Session exemptions**: searchable list of live root sessions; hover a session row in the left sidebar for a shield button, or use the **Exempt this session** button in the composer strip to toggle the current conversation directly;
 - **Holidays**: show the dynamic sync state.
 
+### Route admission
+
+The settings route `/plugins/dsh-offpeak-guard/action` goes through host authentication:
+
+- the route is only registered once both `webServer` and `connection` are available;
+- every request passes `connection.requestRejection(req)` first — its Host/Origin fence stops DNS rebinding and cross-site calls, and its browser authentication stops pages that never logged in; a 401/403 is answered before any business logic runs;
+- a missing `connection`, or one that throws, rejects the request (fail closed); there is no fallback to checking only Host, Origin or the loopback address;
+- request bodies are capped at 64 KiB and answer 413 above that.
+
 ## Subagents and waiting
 
 - Running subagents are allowed to finish; the parent is paused after the last child ends and resumed off-peak;

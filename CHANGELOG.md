@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3 — 2026-11-14
+
+- 设置接口 `/plugins/dsh-offpeak-guard/action` 补上准入：路由只在 `webServer` 与 `connection` 两个服务都在位时注册，每个请求先过 `connection.requestRejection(req)`（Host/Origin 校验 + 浏览器令牌鉴权），返回 401/403 直接拒绝。此前本机任意网页都能改会话豁免、峰谷规则和暂停方式。
+- 拿不到 `connection` 或它抛错时一律按拒绝处理（失败关闭），不退回到只检查 Host/Origin/回环地址。
+- 请求体加 64 KiB 上限，超出返回 413；其余错误仍返回 400。
+- 新增 `test/admission.test.mjs`：覆盖缺服务、读取抛错、`requestRejection` 抛错、放行与 401/403 透传五条路径。
+- 适配 DSH 0.2.2-rc.2 的 `@deepseek-ai/dsh-client-connection` 服务约定（`requestRejection` 接收 `{ headers }`）。
+
 ## 0.3.2 — 2026-11-06
 
 - 修复设置面板切换峰时策略时报 `Unexpected end of JSON input`：Host 启动顺序可能让 `webServer` 在插件 apply 时尚未就绪，导致设置路由根本没注册；改用 `ctx.inject(['webServer'], ...)` 后再挂载路由。

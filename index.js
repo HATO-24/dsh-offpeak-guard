@@ -149,11 +149,25 @@ export function envConfig(env = process.env) {
   return out;
 }
 
+/** 设置接口只收几个字段的小 JSON，超过这个体积按可疑请求拒绝。 */
+const MAX_BODY_BYTES = 64 * 1024;
+
 async function readJsonBody(req) {
-  let raw = '';
-  for await (const chunk of req) raw += chunk;
-  if (raw === '') return {};
-  return JSON.parse(raw);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk?.byteLength ?? Buffer.byteLength(String(chunk));
+    if (size > MAX_BODY_BYTES) {
+      // 先排空再拒绝，让客户端读到响应而不是被一刀切断连接。
+      req.resume();
+      const error = new Error('request body too large');
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  if (size === 0) return {};
+  return JSON.parse(Buffer.concat(chunks, size).toString('utf8'));
 }
 
 function sendJson(res, status, payload) {
@@ -162,6 +176,33 @@ function sendJson(res, status, payload) {
   res.setHeader('content-type', 'application/json; charset=utf-8');
   res.setHeader('cache-control', 'no-store');
   res.end(body);
+}
+
+/**
+ * 设置路由的准入栅栏。
+ *
+ * `connection.requestRejection` 是宿主唯一的本机接口准入点：它同时做 Host/Origin
+ * 校验（挡 DNS rebinding 和跨站请求）与浏览器令牌鉴权（挡没登录的本机网页）。
+ * 没有它，本机任意网页都能改会话豁免、峰谷规则和暂停方式。
+ *
+ * 拿不到 `connection`、或它自己抛错时一律拒绝（失败关闭），不退回到只检查
+ * Host/Origin/回环地址——那条路挡不住别的网页。
+ */
+export function admissionRejection(ctx, req) {
+  let connection;
+  try {
+    connection = Reflect.get(ctx, 'connection');
+  } catch {
+    return 403;
+  }
+  if (connection === undefined || connection === null || typeof connection.requestRejection !== 'function') {
+    return 403;
+  }
+  try {
+    return connection.requestRejection({ headers: req.headers }) ?? undefined;
+  } catch {
+    return 403;
+  }
 }
 
 export function apply(ctx, rawConfig = {}) {
@@ -197,7 +238,7 @@ export function apply(ctx, rawConfig = {}) {
     };
   }, 'offpeak-guard: tools');
 
-  ctx.inject(['webServer'], (webCtx) => {
+  ctx.inject(['webServer', 'connection'], (webCtx) => {
     webCtx.effect(
       () =>
         webCtx.webServer.register({
@@ -205,6 +246,11 @@ export function apply(ctx, rawConfig = {}) {
           path: '/plugins/dsh-offpeak-guard',
           async handler(req, res) {
             try {
+              const rejection = admissionRejection(webCtx, req);
+              if (rejection !== undefined) {
+                sendJson(res, rejection, { ok: false, error: 'unauthorized' });
+                return;
+              }
               const url = new URL(req.url || '/', 'http://x');
               const rest = url.pathname.replace(/^\/plugins\/dsh-offpeak-guard/, '') || '/';
               if (req.method !== 'POST' || rest !== '/action') {
@@ -234,7 +280,8 @@ export function apply(ctx, rawConfig = {}) {
               }
               sendJson(res, 400, { ok: false, error: 'unknown action' });
             } catch (error) {
-              sendJson(res, 400, { ok: false, error: String(error?.message ?? error) });
+              const status = Number.isInteger(error?.statusCode) ? error.statusCode : 400;
+              sendJson(res, status, { ok: false, error: String(error?.message ?? error) });
             }
           },
         }),

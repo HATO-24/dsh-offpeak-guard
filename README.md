@@ -112,6 +112,15 @@
 
 面板里的修改立即生效并持久化。
 
+### 接口准入
+
+设置接口 `/plugins/dsh-offpeak-guard/action` 走宿主认证，不对外开放：
+
+- 路由在 `webServer` 与 `connection` 两个服务都在位时才注册；
+- 每个请求先过 `connection.requestRejection(req)`——Host/Origin 校验挡住 DNS rebinding 与跨站调用，浏览器令牌鉴权挡住没登录的本机网页；返回 401/403 时直接拒绝，不进入业务逻辑；
+- 拿不到 `connection` 或它抛错时一律按拒绝处理（失败关闭），不会退回只检查 Host、Origin 或回环地址；
+- 请求体上限 64 KiB，超出返回 413。
+
 ## 子代理与等待
 
 - 峰时开始时若会话有**正在运行的子代理**，先放行父会话与子代理；
