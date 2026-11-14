@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4 — 2026-11-15
+
+- 收紧模型工具的会话边界：`offpeak_plan` 的 add/list/remove/clear 只能作用于调用者当前会话；显式传其它 `sessionId` 会被拒绝。
+- `offpeak_guard` 的 `pause_now` / `resume_now` / `run_plans_now` / `exempt` / `unexempt` 全部只作用于当前会话；`pause_now` 不再全局 cancel 其它会话。
+- 移除模型工具修改全局 `pause_mode` 的能力，峰时策略只能由用户在设置面板切换。
+- `offpeak_status` / `offpeak_guard status` 只返回当前会话的暂停、豁免、规划明细；规则/倒计时仍为全局只读信息。
+- 规划新增 `createdBySessionId`；自动执行时只投递创建者与目标一致的规划，旧版无创建者的规划标记失败并跳过。
+- 允许目标会话删除/清空自己名下的旧版规划（没有 `createdBySessionId` 但 `sessionId` 匹配）。
+- 新增 `test/guard-authorization.test.mjs`（真实 guard 的旧计划隔离、owner 过滤、addPlan 校验）和工具层 pause/status 授权测试。
+
 ## 0.3.3 — 2026-11-14
 
 - 设置接口 `/plugins/dsh-offpeak-guard/action` 补上准入：路由只在 `webServer` 与 `connection` 两个服务都在位时注册，每个请求先过 `connection.requestRejection(req)`（Host/Origin 校验 + 浏览器令牌鉴权），返回 401/403 直接拒绝。此前本机任意网页都能改会话豁免、峰谷规则和暂停方式。

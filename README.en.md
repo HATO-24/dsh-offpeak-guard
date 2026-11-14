@@ -10,7 +10,8 @@ Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
 - **Time awareness**: per DeepSeek's official pricing, Beijing-time weekdays (excluding Chinese statutory holidays) `09:00–12:00` and `14:00–18:00` are peak; every other hour (weekends, holidays, lunch, night) is off-peak at 50%. Holidays sync from a public API with a built-in 2026 fallback.
 - **Model awareness**: exact `provider / model` detection; models containing `deepseek` are managed by default, and the settings panel can toggle each model. `peakPricedModels` / `exemptModels` provide exact control.
 - **Peak strategy**: choose immediate pause or finish the current turn first; if a session has running subagents, they are allowed to finish and the parent is paused afterwards, then resumed at off-peak.
-- **Session exemptions**: exempt any session from the guard (settings panel or `offpeak_guard exempt/unexempt`), and un-exempt it at any time.
+- **Session exemptions**: exempt the current session via `offpeak_guard exempt/unexempt`, or any session from the settings panel / sidebar row; un-exempt at any time. Model tools cannot target other sessions.
+- **Tool boundary**: every session-level `offpeak_plan` / `offpeak_guard` action is limited to the calling session; tools cannot deliver prompts to, resume, or wake another session. Cross-session exemptions are a user action in the UI.
 - **Work planning**:
   - peak starts → running tasks are paused (the pending inbox is kept, no message is lost);
   - a task started during peak → stopped immediately, no peak-priced tokens spent;
@@ -38,7 +39,7 @@ Click the clock to open the settings panel:
 | --- | --- |
 | `offpeak_status` | Current window, next switch, whether the current model is peak-priced, paused/planned lists |
 | `offpeak_plan` | `add` / `list` / `remove` / `clear` off-peak plans |
-| `offpeak_guard` | `status` / `pause_now` / `resume_now` / `run_plans_now` manual control |
+| `offpeak_guard` | `status` / `pause_now` / `resume_now` / `run_plans_now` manual control (all limited to the current session; global strategy lives in settings) |
 
 ## Configuration
 
@@ -135,6 +136,14 @@ State and snapshots live in `$DSH_HOME/offpeak-guard/`:
 
 Nothing is written into user workspaces.
 
+## Tool session boundaries
+
+- `offpeak_plan` can only add/list/remove/clear plans for the session that calls it; any other `sessionId` is rejected.
+- `offpeak_guard`'s `pause_now`, `resume_now`, `run_plans_now`, `exempt`, and `unexempt` only act on the calling session; omitting `sessionId` never falls back to "all sessions". `status` returns only the current session's details, and `pause_mode` can only be changed by the user in the settings panel.
+- Automatic peak pause/resume is unchanged: the guard still handles every root session by rule.
+- Legacy plans without `createdBySessionId` have no provable authorization source; they are marked failed and skipped, and must be re-created from the target session.
+- Cross-session exemptions are a user action in the settings panel or the sidebar row; model tools provide no cross-session delivery.
+
 ## How resuming works
 
 Pause uses `sessionController.cancel`, which ends only the current turn and keeps the pending inbox. Resume uses `sessionController.prompt` to deliver a "continue where you left off" instruction to the original session; cold sessions are woken automatically. The resume text mentions the interruption time and the paused model so it stays traceable in the conversation.
@@ -146,6 +155,6 @@ Pause uses `sessionController.cancel`, which ends only the current turn and keep
 - Named presets have fixed windows; use `preset: custom` for other providers or self-hosted pricing.
 - Only root sessions with a working directory are handled; subagent sessions are skipped so parents do not hang.
 - Subagent results are consumed by the parent after it resumes; the guard stops the parent at child completion but cannot intercept messages already written into the parent history.
-- A session exemption affects future pauses/resumes only; use `resume_now` to resume an already paused session.
+- A session exemption affects future pauses/resumes only; use `resume_now` in the current session to resume an already paused task.
 - A plugin restart does not cancel tasks that are already running (so installing the plugin cannot kill the current conversation); the next peak or new task follows the rules again.
-- Manual `resume_now` grants those sessions a 10-minute grace period so they are not paused again immediately.
+- Manual `resume_now` grants the current session a 10-minute grace period so it is not paused again immediately.
