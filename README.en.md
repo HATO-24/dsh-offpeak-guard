@@ -20,6 +20,7 @@ Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
   - off-peak starts → interrupted tasks are handed back to their session automatically;
   - the `offpeak_plan` tool queues "run this at noon" work for the next off-peak window.
 - **UI**: a status strip under the composer (state, countdown, model, paused/held/planned counts), plus a compact clock at the sidebar foot that blinks red before peak starts and green before off-peak starts. Sidebar rows, strip, settings panel, and clock share one status snapshot, so a change in any of them updates the rest. Click the clock to open settings. Hover a session row in the left sidebar for a shield button to exempt/un-exempt it; exempt rows keep a shield marker, and the composer strip has an **Exempt this session** toggle.
+- **Theme support**: adapted for `dsh-industrial-acid-skin` (v2.4.x). The clock, composer strip, and settings panel follow the skin's square hard-edge layout, monospace type, and palette; nothing changes when the skin is not installed.
 
 ![Status strip under the composer](docs/peak-strip.png)
 
@@ -34,6 +35,16 @@ Red blink within the alert window before peak (sample):
 Click the clock to open the settings panel:
 
 ![Settings panel](docs/settings-panel.png)
+
+## Theme support
+
+Adapted for the **industrial acid skin** (`dsh-industrial-acid-skin`, v2.4.x):
+
+- The skin rebuilds the sidebar footer as square, monospace blocks and places the guard clock and its own AppearanceFooter in the same `sidebar.footer.action` container. The guard now stacks them vertically so the clock takes a full row and the skin controls keep their full width.
+- The sidebar clock uses the skin's square border and monospace type, keeps a 32×32 icon in the collapsed rail, and appears with the skin's MORE drawer when the skin collapses the footer — it never covers the session list.
+- The settings panel follows the skin's square border, monospace headings, and hard green shadow; segmented buttons, checkboxes, and the session-exemption button use the skin palette.
+- The composer strip uses the skin's monospace font. Peak/off-peak colors are derived from the skin palette, so they stay readable in both day and night canvases and after palette changes, instead of hard-coded red/green.
+- Everything is scoped under `html[data-industrial-acid]`: with the skin absent, disabled, or after switching back to the default theme, the appearance is unchanged and no configuration is needed.
 
 ## Tools
 

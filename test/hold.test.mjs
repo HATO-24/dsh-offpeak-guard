@@ -3,11 +3,36 @@
  * 而不是让消息在峰时直接进入 turn。
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
 const { createGuard } = await import('../lib/guard.js');
+
+/** 状态文件由异步写队列落盘；并行跑整套测试时 50ms 的固定等待偶发不够。 */
+async function waitFor(predicate, timeout = 3000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return predicate();
+}
+
+async function readStateEventually(file, predicate, timeout = 3000) {
+  const deadline = Date.now() + timeout;
+  let last;
+  while (Date.now() < deadline) {
+    try {
+      last = JSON.parse(readFileSync(file, 'utf8'));
+      if (predicate(last)) return last;
+    } catch {
+      /* 还没落盘 */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`等待状态文件超时：${file}；最后一次读到：${JSON.stringify(last)}`);
+}
 
 test('峰时用户消息被从 inbox 摘出并暂存', async () => {
   const root = mkdtempSync(join(process.cwd(), '.tmp-hold-test-'));
@@ -71,9 +96,12 @@ test('峰时用户消息被从 inbox 摘出并暂存', async () => {
     const onInsert = listeners.get('agent/inbox/inserted');
     assert.equal(typeof onInsert, 'function');
     onInsert({ agent, message });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => existsSync(join(root, 'offpeak-guard', 'state.json')));
     assert.deepEqual(removed, ['message-hold']);
-    const state = JSON.parse(readFileSync(join(root, 'offpeak-guard', 'state.json'), 'utf8'));
+    const state = await readStateEventually(
+      join(root, 'offpeak-guard', 'state.json'),
+      (value) => value.heldMessages.length === 1,
+    );
     assert.equal(state.heldMessages.length, 1);
     assert.equal(state.heldMessages[0].status, 'held');
     assert.equal(state.heldMessages[0].sessionId, 'session-hold');
@@ -139,11 +167,14 @@ test('谷价 tick 把暂存消息按原内容投递', async () => {
   });
   const stop = guard.start();
   try {
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await waitFor(() => prompts.length === 1);
     assert.equal(prompts.length, 1);
     assert.equal(prompts[0].sessionId, 'session-hold');
     assert.equal(prompts[0].content[0].text, '谷价再发');
-    const state = JSON.parse(readFileSync(join(root, 'offpeak-guard', 'state.json'), 'utf8'));
+    const state = await readStateEventually(
+      join(root, 'offpeak-guard', 'state.json'),
+      (value) => value.heldMessages[0]?.status === 'delivered',
+    );
     assert.equal(state.heldMessages[0].status, 'delivered');
   } finally {
     stop();

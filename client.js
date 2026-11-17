@@ -289,15 +289,15 @@ window.__ModuleLoader__.load({
             height: 7,
             borderRadius: '50%',
             flex: '0 0 auto',
-            backgroundColor: phase === 'peak' ? '#e0a33e' : '#3f9d7a',
+            backgroundColor: phase === 'peak' ? 'var(--opg-peak-dot, #e0a33e)' : 'var(--opg-valley-dot, #3f9d7a)',
           },
         }),
         h('span', { key: 'phase', style: { fontWeight: 600 } }, t(phase)),
         h('span', { key: 'next' }, `${nextLabel} ${fmtDuration(remaining)}`),
       ];
       if (modelId !== '') children.push(h('span', { key: 'model', style: { opacity: 0.75 } }, `· ${modelId}`));
-      if (paused > 0) children.push(h('span', { key: 'paused', style: { color: '#e0a33e' } }, `· ${t('paused')} ${paused}`));
-      if (held > 0) children.push(h('span', { key: 'held', style: { color: '#b26a00' } }, `· 挂起 ${held}`));
+      if (paused > 0) children.push(h('span', { key: 'paused', style: { color: 'var(--opg-peak-text, #e0a33e)' } }, `· ${t('paused')} ${paused}`));
+      if (held > 0) children.push(h('span', { key: 'held', style: { color: 'var(--opg-held-text, #b26a00)' } }, `· 挂起 ${held}`));
       if (plans > 0) children.push(h('span', { key: 'plans' }, `· ${t('plans')} ${plans}`));
       const currentSessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
       const currentExempt =
@@ -341,7 +341,8 @@ window.__ModuleLoader__.load({
             justifyContent: 'center',
             gap: 8,
             padding: '2px 6px 6px',
-            fontSize: 11,
+            fontSize: 'var(--opg-strip-font-size, 11px)',
+            fontFamily: 'var(--opg-strip-font, inherit)',
             lineHeight: 1.4,
             color: 'var(--dsw-alias-label-secondary, rgba(115,119,128,0.92))',
             userSelect: 'none',
@@ -376,6 +377,47 @@ window.__ModuleLoader__.load({
       if (hours > 0) return withSeconds ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${hours}:${pad(minutes)}`;
       return `${minutes}:${pad(seconds)}`;
     }
+
+    // 工业酸性皮肤（dsh-industrial-acid-skin）适配。
+    // 皮肤把侧栏 footer 重做成直角、等宽字体的硬边界组件，并把它的
+    // AppearanceFooter 和本插件的时钟放进同一个 sidebar.footer.action 容器；
+    // 容器默认横向排布，两个 occupant 会互相挤压（时钟被拉成整列高）。
+    // 这里在皮肤存在时改为纵向堆叠，并让时钟、状态条、设置面板沿用皮肤
+    // 的色板与等宽字体。所有规则都以 html[data-industrial-acid] 开头，
+    // 未安装皮肤时完全不生效。
+    const acidSkinStyle = `
+html[data-industrial-acid]{--opg-acid-font:var(--acid-mono,'Cascadia Code',Consolas,'Microsoft YaHei',monospace);--opg-acid-rule:var(--acid-sidebar-rule,var(--dsw-alias-border-l1));--opg-acid-muted:var(--acid-sidebar-secondary,var(--dsw-alias-label-secondary));--opg-acid-ink:var(--acid-sidebar-fore,var(--dsw-alias-label-primary));--opg-strip-font:var(--acid-mono,'Cascadia Code',Consolas,'Microsoft YaHei',monospace);--opg-strip-font-size:10px;--opg-peak-dot:color-mix(in srgb,#e0a33e 50%,var(--dsw-alias-label-primary));--opg-valley-dot:color-mix(in srgb,#3f9d7a 50%,var(--dsw-alias-label-primary));--opg-peak-text:color-mix(in srgb,#e0a33e 50%,var(--dsw-alias-label-primary));--opg-held-text:color-mix(in srgb,#b26a00 50%,var(--dsw-alias-label-primary));}
+html[data-industrial-acid] div:has(> [data-slot="sidebar.footer.action"]){display:flex;flex-direction:column;align-items:stretch;gap:4px;}
+html[data-industrial-acid] .opg-clock{box-sizing:border-box;width:100%;max-width:none;min-height:30px;height:30px;margin:0;padding:0 8px;gap:7px;justify-content:flex-start;border:1px solid var(--opg-acid-rule);border-radius:2px;font:600 10px/1 var(--opg-acid-font);letter-spacing:.05em;color:var(--opg-acid-muted);background:transparent;}
+html[data-industrial-acid] .opg-clock[data-compact="true"]{width:32px;height:32px;min-height:32px;margin:0 auto;padding:6px;gap:0;justify-content:center;}
+html[data-industrial-acid] .opg-clock:hover,html[data-industrial-acid] .opg-clock:focus-visible{background:var(--acid-sidebar-hover,var(--dsw-alias-interactive-bg-hover));border-color:var(--opg-acid-ink);outline:none;}
+html[data-industrial-acid] .opg-clock-dot{width:6px;height:6px;border-radius:0;background:var(--opg-acid-muted);}
+html[data-industrial-acid] .opg-clock[data-tone="peak"]{color:var(--opg-peak-text);}
+html[data-industrial-acid] .opg-clock[data-tone="valley"]{color:var(--opg-valley-dot);}
+html[data-industrial-acid] .opg-clock[data-tone="peak"] .opg-clock-dot{background:var(--opg-peak-dot);}
+html[data-industrial-acid] .opg-clock[data-tone="valley"] .opg-clock-dot{background:var(--opg-valley-dot);}
+html[data-industrial-acid] .opg-clock[data-blink="red"],html[data-industrial-acid] .opg-clock[data-blink="green"]{animation:opg-acid-blink .9s steps(2,end) infinite;}
+@keyframes opg-acid-blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+html[data-industrial-acid] .opg-panel{width:min(600px,92vw);border:1px solid var(--acid-rule,var(--dsw-alias-border-l1));border-radius:2px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:7px 7px 0 color-mix(in srgb,var(--acid-lime) 30%,transparent);font:13px/1.6 var(--dsw-font-family,system-ui,sans-serif);}
+html[data-industrial-acid] .opg-panel::backdrop{background:#000a;backdrop-filter:blur(4px);}
+html[data-industrial-acid] .opg-panel-head{padding:15px 18px;border-bottom:1px solid var(--acid-rule,var(--dsw-alias-border-l1));}
+html[data-industrial-acid] .opg-panel-head strong{font:700 13px/1.2 var(--opg-acid-font);letter-spacing:.12em;text-transform:uppercase;}
+html[data-industrial-acid] .opg-panel-body{padding:16px 18px;}
+html[data-industrial-acid] .opg-panel-close{border:1px solid var(--acid-rule,var(--dsw-alias-border-l1));border-radius:2px;padding:6px 11px;font:600 11px/1 var(--opg-acid-font);letter-spacing:.06em;color:inherit;}
+html[data-industrial-acid] .opg-panel-close:hover{background:var(--acid-lime);color:var(--acid-ink,#121711);}
+html[data-industrial-acid] .opg-panel-meta{font:11px/1.5 var(--opg-acid-font);letter-spacing:.03em;color:var(--dsw-alias-label-secondary);}
+html[data-industrial-acid] .opg-section h4{font:700 10px/1 var(--opg-acid-font);letter-spacing:.14em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);}
+html[data-industrial-acid] .opg-row-sub,html[data-industrial-acid] .opg-group-name{font-family:var(--opg-acid-font);letter-spacing:.02em;}
+html[data-industrial-acid] .opg-check{accent-color:var(--acid-lime);}
+html[data-industrial-acid] .opg-seg{display:flex;width:100%;box-sizing:border-box;border:1px solid var(--acid-rule,var(--dsw-alias-border-l1));border-radius:2px;}
+html[data-industrial-acid] .opg-seg button{flex:1 1 0;padding:8px 10px;font:600 11px/1.2 var(--dsw-font-family,system-ui,sans-serif);}
+html[data-industrial-acid] .opg-seg button[data-active="true"]{background:var(--acid-lime);color:var(--acid-ink,#121711);}
+html[data-industrial-acid] .opg-error{color:color-mix(in srgb,#e0554e 55%,var(--dsw-alias-label-primary));}
+html[data-industrial-acid] .opg-exempt{border:1px solid var(--acid-rule,var(--dsw-alias-border-l1));border-radius:2px;font:600 10px/1.4 var(--opg-acid-font);letter-spacing:.03em;}
+html[data-industrial-acid] .opg-exempt[data-exempt="true"]{color:color-mix(in srgb,#e0554e 55%,var(--dsw-alias-label-primary));border-color:color-mix(in srgb,#e0554e 40%,var(--acid-rule,var(--dsw-alias-border-l1)));}
+html[data-industrial-acid] .opg-exempt:hover{border-color:var(--dsw-alias-label-secondary);}
+html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industrial-acid] .opg-trail{color:color-mix(in srgb,#e0554e 55%,var(--acid-sidebar-fore));}
+`;
 
     const clockStyle = `
 .opg-clock{box-sizing:border-box;display:inline-flex;flex:0 0 auto;align-items:center;gap:5px;width:auto;max-width:100%;min-height:32px;margin-left:auto;padding:4px 8px;border-radius:8px;color:var(--dsw-alias-label-primary,#252936);font:500 12px/18px var(--dsw-font-family,system-ui,sans-serif);white-space:nowrap;-webkit-app-region:no-drag;cursor:pointer;}
@@ -418,7 +460,7 @@ window.__ModuleLoader__.load({
 .opg-exempt{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l1,#dde0e6);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#6c7769);font:11px/16px var(--dsw-font-family,system-ui,sans-serif);padding:1px 6px;cursor:pointer;white-space:nowrap;}
 .opg-exempt[data-exempt="true"]{color:#e0554e;border-color:#e0554e66;}
 .opg-exempt:hover{border-color:var(--dsw-alias-label-secondary,#8a8d94);}
-`;
+` + acidSkinStyle;
 
     function ClockIcon() {
       return h(
