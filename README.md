@@ -138,7 +138,7 @@
 
 状态与快照都在 `$DSH_HOME/offpeak-guard/`：
 
-- `state.json`：暂停/等待中的任务、错峰规划、会话豁免、精确模型规则、峰时策略；
+- `state.json`：暂停/等待中的任务、峰时挂起消息、错峰规划、会话豁免、精确模型规则、峰时策略；
 - `status.json`：给输入框状态条/设置面板读的只读快照（同时镜像到 `~/.dsh/offpeak-guard/status.json`）；
 - `holidays.json`：动态同步的节假日缓存。
 

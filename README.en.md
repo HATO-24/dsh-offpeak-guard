@@ -135,7 +135,7 @@ The settings route `/plugins/dsh-offpeak-guard/action` goes through host authent
 
 State and snapshots live in `$DSH_HOME/offpeak-guard/`:
 
-- `state.json`: paused/waiting tasks, plans, session exemptions, exact model rules, peak strategy;
+- `state.json`: paused/waiting tasks, held peak messages, plans, session exemptions, exact model rules, peak strategy;
 - `status.json`: read-only snapshot for the UI (mirrored to `~/.dsh/offpeak-guard/status.json`);
 - `holidays.json`: cached dynamic holiday dates.
 
