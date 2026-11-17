@@ -98,63 +98,28 @@ window.__ModuleLoader__.load({
       return text;
     }
 
-    function useSnapshot(ctx, sessionId) {
-      const [snapshot, setSnapshot] = React.useState(null);
-      const [error, setError] = React.useState(null);
-      const busy = React.useRef(false);
-      const mounted = React.useRef(true);
-
-      const load = React.useCallback(async () => {
-        if (busy.current) return;
-        busy.current = true;
-        try {
-          const remote = ctx.remote;
-          if (!remote || typeof remote.workspaceFiles?.read !== 'function') {
-            throw new Error('remote.workspaceFiles 不可用');
-          }
-          let target = typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
-          if (target === null) {
-            if (typeof remote.session?.list !== 'function') throw new Error('remote.session 不可用');
-            const listed = await remote.session.list({});
-            const items = listed?.value?.items ?? listed?.items ?? [];
-            if (!Array.isArray(items) || items.length === 0) return;
-            const sorted = [...items].sort(
-              (left, right) => Number(right.updatedAt ?? right.lastActivityAt ?? 0) - Number(left.updatedAt ?? left.lastActivityAt ?? 0),
-            );
-            target = sorted[0]?.sessionId ?? sorted[0]?.id ?? null;
-          }
-          const home = remote.$host?.home;
-          if (typeof target !== 'string' || target.length === 0) throw new Error('没有可用的会话');
-          if (typeof home !== 'string' || home.length === 0) throw new Error('读不到 Harness 主目录');
-          const result = await remote.workspaceFiles.read(target, `${home}/.dsh/offpeak-guard/status.json`, {});
-          const parsed = JSON.parse(snapshotTextOf(result));
-          if (mounted.current && parsed !== null && typeof parsed === 'object') {
-            setSnapshot(parsed);
-            setError(null);
-            sharedStatus.snapshot = parsed;
-            for (const listener of sharedStatus.listeners) listener();
-          }
-        } catch (caught) {
-          if (mounted.current) setError(String(caught?.message ?? caught));
-        } finally {
-          busy.current = false;
-        }
-      }, [sessionId]);
-
-      React.useEffect(() => {
-        mounted.current = true;
-        void load();
-        const timer = setInterval(() => void load(), 30000);
-        return () => {
-          mounted.current = false;
-          clearInterval(timer);
-        };
-      }, [load]);
-
-      return { snapshot, error, refresh: load };
+    // 所有面板共享同一个 status.json 快照：左侧会话行、输入框状态条、设置
+    // 面板和左栏时钟都订阅同一份 store。任意一处修改后只重新读一次文件，
+    // 其余面板立即重渲染，不再各自轮询出不同副本。
+    function useSnapshot(ctx, _sessionId) {
+      const snapshot = useSharedStatus(ctx);
+      return {
+        snapshot,
+        error: sharedStatus.error,
+        refresh: () => loadSharedStatus(ctx, true),
+      };
     }
 
-    const sharedStatus = { snapshot: null, listeners: new Set(), timer: null, loading: false, ctx: null };
+    const sharedStatus = {
+      snapshot: null,
+      error: null,
+      loadedAt: 0,
+      listeners: new Set(),
+      timer: null,
+      loading: false,
+      reloadQueued: false,
+      ctx: null,
+    };
 
     async function readSharedStatus(ctx) {
       const remote = ctx.remote;
@@ -184,27 +149,46 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    async function loadSharedStatus(ctx) {
-      if (sharedStatus.loading) return;
+    function notifySharedStatus() {
+      for (const listener of sharedStatus.listeners) listener();
+    }
+
+    async function loadSharedStatus(ctx, force = false) {
+      if (ctx === null || ctx === undefined) return;
+      if (sharedStatus.loading) {
+        if (force) sharedStatus.reloadQueued = true;
+        return;
+      }
+      if (!force && Date.now() - sharedStatus.loadedAt < 2000) return;
       sharedStatus.loading = true;
       try {
         const snapshot = await readSharedStatus(ctx);
         if (snapshot !== null) {
           sharedStatus.snapshot = snapshot;
-          for (const listener of sharedStatus.listeners) listener();
+          sharedStatus.error = null;
+          sharedStatus.loadedAt = Date.now();
+          notifySharedStatus();
+        } else if (sharedStatus.snapshot === null) {
+          sharedStatus.error = '状态文件尚未生成';
+          notifySharedStatus();
         }
-      } catch {
-        /* 状态文件尚未生成时保持旧值 */
+      } catch (caught) {
+        sharedStatus.error = String(caught?.message ?? caught);
+        notifySharedStatus();
       } finally {
         sharedStatus.loading = false;
+        if (sharedStatus.reloadQueued === true) {
+          sharedStatus.reloadQueued = false;
+          void loadSharedStatus(ctx, true);
+        }
       }
     }
 
     function ensureSharedStatus(ctx) {
       sharedStatus.ctx = ctx;
       if (sharedStatus.timer !== null) return;
-      void loadSharedStatus(ctx);
-      sharedStatus.timer = setInterval(() => void loadSharedStatus(ctx), 30000);
+      if (Date.now() - sharedStatus.loadedAt > 2000) void loadSharedStatus(ctx, true);
+      sharedStatus.timer = setInterval(() => void loadSharedStatus(ctx), 15000);
     }
 
     function useSharedStatus(ctx) {
@@ -213,6 +197,8 @@ window.__ModuleLoader__.load({
         const listener = () => force((value) => value + 1);
         sharedStatus.listeners.add(listener);
         ensureSharedStatus(ctx);
+        // 面板/状态条重新挂载时强制对齐一次；关闭再打开不会拿到旧副本。
+        if (Date.now() - sharedStatus.loadedAt > 3000) void loadSharedStatus(ctx, true);
         return () => {
           sharedStatus.listeners.delete(listener);
           if (sharedStatus.listeners.size === 0 && sharedStatus.timer !== null) {
@@ -239,7 +225,7 @@ window.__ModuleLoader__.load({
         json = {};
       }
       if (!response.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${response.status}`);
-      if (sharedStatus.ctx !== null) await loadSharedStatus(sharedStatus.ctx);
+      if (sharedStatus.ctx !== null) await loadSharedStatus(sharedStatus.ctx, true);
       return json;
     }
 
@@ -247,7 +233,7 @@ window.__ModuleLoader__.load({
       return function Strip(props) {
         const ctx = pluginCtx;
         const t = useLocale(ctx);
-        const { snapshot, error, refresh } = useSnapshot(ctx, props?.sessionId);
+        const { snapshot, error } = useSnapshot(ctx, props?.sessionId);
         const [busy, setBusy] = React.useState(false);
         const [, force] = React.useState(0);
 
@@ -277,6 +263,7 @@ window.__ModuleLoader__.load({
             : '';
       const paused = Number(snapshot.counts?.interrupted ?? 0);
       const plans = Number(snapshot.counts?.plans ?? 0);
+      const held = Number(snapshot.counts?.held ?? 0);
       const guardOn = snapshot.guard?.enabled === true;
       const nextLabel = phase === 'peak' ? t('toOffpeak') : t('toPeak');
 
@@ -287,6 +274,7 @@ window.__ModuleLoader__.load({
         `${t('model')}: ${modelId || '—'}${activeModel.peakPriced ? ` (${phase === 'peak' ? t('peak') : t('offpeak')})` : ''}`,
         `${t('guard')}: ${guardOn ? t('on') : t('off')}`,
         paused > 0 ? `${t('paused')}: ${paused} — ${t('pausedNote')}` : '',
+        held > 0 ? `峰时挂起消息: ${held} — 谷价开始后自动发送` : '',
         plans > 0 ? `${t('plans')}: ${plans} — ${t('plansNote')}` : '',
       ]
         .filter(Boolean)
@@ -309,6 +297,7 @@ window.__ModuleLoader__.load({
       ];
       if (modelId !== '') children.push(h('span', { key: 'model', style: { opacity: 0.75 } }, `· ${modelId}`));
       if (paused > 0) children.push(h('span', { key: 'paused', style: { color: '#e0a33e' } }, `· ${t('paused')} ${paused}`));
+      if (held > 0) children.push(h('span', { key: 'held', style: { color: '#b26a00' } }, `· 挂起 ${held}`));
       if (plans > 0) children.push(h('span', { key: 'plans' }, `· ${t('plans')} ${plans}`));
       const currentSessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
       const currentExempt =
@@ -330,7 +319,6 @@ window.__ModuleLoader__.load({
                 setBusy(true);
                 try {
                   await postAction({ action: 'exempt', sessionId: currentSessionId, exempt: !currentExempt });
-                  await refresh();
                 } catch {
                   /* 下一次点击重试 */
                 } finally {
@@ -472,7 +460,7 @@ window.__ModuleLoader__.load({
       return groups;
     }
 
-    function SettingsPanel({ ctx, snapshot, refresh, groups, onClose }) {
+    function SettingsPanel({ ctx, snapshot, groups, onClose }) {
       const [busy, setBusy] = React.useState('');
       const [error, setError] = React.useState('');
       const [query, setQuery] = React.useState('');
@@ -480,21 +468,7 @@ window.__ModuleLoader__.load({
         setBusy(`${body.action}:${body.sessionId ?? body.provider ?? body.mode ?? ''}`);
         setError('');
         try {
-          const response = await fetch('/plugins/dsh-offpeak-guard/action', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const text = await response.text();
-          let json = {};
-          try {
-            json = text === '' ? {} : JSON.parse(text);
-          } catch {
-            json = {};
-          }
-          if (!response.ok || json.ok === false) throw new Error(json.error ?? `HTTP ${response.status}`);
-          await refresh();
+          await postAction(body);
         } catch (caught) {
           setError(String(caught?.message ?? caught));
         } finally {
@@ -552,6 +526,16 @@ window.__ModuleLoader__.load({
               ),
             ]),
             h('div', { className: 'opg-note', key: 'note' }, '有子代理在运行时，会先放行子代理；子代理结束后再暂停父会话。'),
+            h('label', { className: 'opg-row', key: 'hold' }, [
+              h('input', {
+                className: 'opg-check',
+                type: 'checkbox',
+                checked: snapshot.holdMessages !== false,
+                disabled: busy !== '',
+                onChange: (event) => post({ action: 'holdMessages', enabled: event.target.checked }),
+              }),
+              h('span', { className: 'opg-row-label' }, '峰时发送的消息先挂起，谷价开始后自动发送'),
+            ]),
           ]),
           h('div', { className: 'opg-section', key: 'models' }, [
             h('h4', { key: 'h' }, '模型管理（精确到 provider/model）'),
@@ -704,7 +688,7 @@ window.__ModuleLoader__.load({
     function makeClock(pluginCtx) {
       return function Clock(props) {
         const t = useLocale(pluginCtx);
-        const { snapshot, refresh } = useSnapshot(pluginCtx, null);
+        const { snapshot } = useSnapshot(pluginCtx, null);
         const [open, setOpen] = React.useState(false);
         const dialogRef = React.useRef(null);
         const groups = useCatalog(pluginCtx, open);
@@ -794,7 +778,6 @@ window.__ModuleLoader__.load({
             ? h(SettingsPanel, {
                 ctx: pluginCtx,
                 snapshot,
-                refresh,
                 groups,
                 onClose: () => setOpen(false),
               })

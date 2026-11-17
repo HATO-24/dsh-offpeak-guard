@@ -46,6 +46,10 @@ function fakeGuard() {
             { sessionId: CALLER, title: '当前会话' },
             { sessionId: OTHER, title: '别的会话' },
           ],
+          heldMessages: [
+            { id: 'h1', sessionId: CALLER, title: '当前会话挂起' },
+            { id: 'h2', sessionId: OTHER, title: '别的会话挂起' },
+          ],
           sessions: {
             [CALLER]: { title: '当前会话' },
             [OTHER]: { title: '别的会话' },
@@ -189,6 +193,8 @@ test('offpeak_guard status 不返回其它会话的明细', async () => {
   assert.deepEqual(result.data.interrupted.map((item) => item.id), ['p1', 'w1']);
   assert.equal(result.data.counts.interrupted, 1);
   assert.equal(result.data.counts.waiting, 1);
+  assert.equal(result.data.counts.held, 1);
+  assert.deepEqual(result.data.heldMessages.map((item) => item.id), ['h1']);
   assert.deepEqual(result.data.exemptSessions.map((item) => item.sessionId), [CALLER]);
   assert.deepEqual(result.data.plans.map((item) => item.id), ['mine', 'legacy']);
   assert.doesNotMatch(result.text, /别的会话/);

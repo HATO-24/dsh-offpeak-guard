@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-11-17
+
+- 新增峰时消息挂起：监听 `agent/inbox/inserted`，在 Agent 唤醒/claim 前把用户消息移出 inbox，保存 `content`，谷价开始后按原内容自动重投；默认开启，设置面板可关闭。
+- 设置面板新增「峰时发送的消息先挂起」开关；状态条显示「挂起 N」；`offpeak_status` 增加挂起消息行。
+- 修复面板同步：左侧会话行、输入框状态条、设置面板、左栏时钟改为订阅同一份 `status.json` store；任意一处修改后统一重读并通知全部面板，关闭再打开也不会拿到旧副本。
+- 新增 `test/hold.test.mjs`：验证峰时消息在进入回合前被摘出暂存、谷价 tick 按原内容投递。
+- 新增 `holdMessages` Config 字段与 `DSH_OFFPEAK_HOLD_MESSAGES` 环境变量。
+
 ## 0.3.4 — 2026-11-15
 
 - 收紧模型工具的会话边界：`offpeak_plan` 的 add/list/remove/clear 只能作用于调用者当前会话；显式传其它 `sessionId` 会被拒绝。

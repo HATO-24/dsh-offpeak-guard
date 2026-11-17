@@ -125,6 +125,7 @@ test('环境变量覆盖配置', () => {
   const env = envConfig({
     DSH_OFFPEAK_PRESET: 'custom',
     DSH_OFFPEAK_PAUSE_MODE: 'finish-turn',
+    DSH_OFFPEAK_HOLD_MESSAGES: '0',
     DSH_OFFPEAK_TIMEZONE: 'Asia/Tokyo',
     DSH_OFFPEAK_PEAK_WEEKDAYS: '1,3,5',
     DSH_OFFPEAK_PEAK_WINDOWS: '08:00-10:00, 15:00-17:00',
@@ -136,6 +137,7 @@ test('环境变量覆盖配置', () => {
   });
   assert.equal(env.preset, 'custom');
   assert.equal(env.pauseMode, 'finish-turn');
+  assert.equal(env.holdMessages, false);
   assert.equal(env.timezone, 'Asia/Tokyo');
   assert.deepEqual(env.peakWeekdays, [1, 3, 5]);
   assert.deepEqual(env.peakWindows, [
@@ -149,17 +151,23 @@ test('环境变量覆盖配置', () => {
   assert.equal(env.holidaySource, 'builtin');
 });
 
-test('状态文件保留会话豁免与精确模型规则', async () => {
+test('状态文件保留会话豁免、精确模型规则和挂起消息', async () => {
   const { normalizeState } = await import('../lib/store.js');
   const state = normalizeState({
     exemptSessions: { 'session-a': { title: '别动我', at: 1 } },
     modelRules: { 'deepseek-account/deepseek-flash': false, 'vendor/model': true },
-    settings: { pauseMode: 'finish-turn' },
+    settings: { pauseMode: 'finish-turn', holdMessages: false },
+    heldMessages: [
+      { id: 'held-a', sessionId: 'session-a', content: [{ type: 'text', text: '峰时再发' }], status: 'held' },
+    ],
   });
   assert.equal(state.exemptSessions['session-a'].title, '别动我');
   assert.equal(state.modelRules['deepseek-account/deepseek-flash'], false);
   assert.equal(state.modelRules['vendor/model'], true);
   assert.equal(state.settings.pauseMode, 'finish-turn');
+  assert.equal(state.settings.holdMessages, false);
+  assert.equal(state.heldMessages.length, 1);
+  assert.equal(state.heldMessages[0].content[0].text, '峰时再发');
 });
 
 test('nextPhaseStart 能跳过午餐谷价找到下一次峰时', () => {

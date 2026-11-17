@@ -10,14 +10,16 @@ Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
 - **Time awareness**: per DeepSeek's official pricing, Beijing-time weekdays (excluding Chinese statutory holidays) `09:00–12:00` and `14:00–18:00` are peak; every other hour (weekends, holidays, lunch, night) is off-peak at 50%. Holidays sync from a public API with a built-in 2026 fallback.
 - **Model awareness**: exact `provider / model` detection; models containing `deepseek` are managed by default, and the settings panel can toggle each model. `peakPricedModels` / `exemptModels` provide exact control.
 - **Peak strategy**: choose immediate pause or finish the current turn first; if a session has running subagents, they are allowed to finish and the parent is paused afterwards, then resumed at off-peak.
+- **Peak message holding**: a user message sent during peak is removed from the Agent inbox before it is claimed, stored, and sent with its original content when off-peak starts. Enabled by default; the settings panel can turn it off.
 - **Session exemptions**: exempt the current session via `offpeak_guard exempt/unexempt`, or any session from the settings panel / sidebar row; un-exempt at any time. Model tools cannot target other sessions.
 - **Tool boundary**: every session-level `offpeak_plan` / `offpeak_guard` action is limited to the calling session; tools cannot deliver prompts to, resume, or wake another session. Cross-session exemptions are a user action in the UI.
 - **Work planning**:
   - peak starts → running tasks are paused (the pending inbox is kept, no message is lost);
-  - a task started during peak → stopped immediately, no peak-priced tokens spent;
+  - a message sent during peak → held and delivered at off-peak (default);
+  - a task already started during peak → stopped immediately, no peak-priced tokens spent;
   - off-peak starts → interrupted tasks are handed back to their session automatically;
   - the `offpeak_plan` tool queues "run this at noon" work for the next off-peak window.
-- **UI**: a status strip under the composer (state, countdown, model, paused/planned counts), plus a compact clock at the sidebar foot that blinks red before peak starts and green before off-peak starts. Click the clock to open settings. Hover a session row in the left sidebar for a shield button to exempt/un-exempt it; exempt rows keep a shield marker, and the composer strip has an **Exempt this session** toggle.
+- **UI**: a status strip under the composer (state, countdown, model, paused/held/planned counts), plus a compact clock at the sidebar foot that blinks red before peak starts and green before off-peak starts. Sidebar rows, strip, settings panel, and clock share one status snapshot, so a change in any of them updates the rest. Click the clock to open settings. Hover a session row in the left sidebar for a shield button to exempt/un-exempt it; exempt rows keep a shield marker, and the composer strip has an **Exempt this session** toggle.
 
 ![Status strip under the composer](docs/peak-strip.png)
 
@@ -50,6 +52,7 @@ The `offpeak-guard` row's `config` in `cordis.patch.yml`, or the plugin settings
 | `enabled` | `true` | Master switch |
 | `preset` | `auto` | `auto` picks by provider: WorkBuddy/CodeBuddy → `workbuddy`, otherwise `deepseek-official`; can be pinned to `deepseek-official` / `workbuddy` / `custom` |
 | `pauseMode` | `pause-now` | `pause-now` pauses immediately; `finish-turn` pauses after the current turn |
+| `holdMessages` | `true` | Hold peak-time user messages and send them at off-peak; disable to cancel new turns instead |
 | `timezone` | `Asia/Shanghai` | Pricing time zone (DeepSeek bills in Beijing time) |
 | `peakWeekdays` | `[1,2,3,4,5]` | Weekdays with peak windows (0 = Sunday); only used by `custom` |
 | `peakWindows` | 09:00–12:00, 14:00–18:00 | Peak windows; only used by `custom` |
@@ -77,6 +80,7 @@ Deployments can inject settings with environment variables. Priority: **env > co
 | `DSH_OFFPEAK_ENABLED` | `0` / `1` | `enabled` |
 | `DSH_OFFPEAK_PRESET` | `custom` | `preset` |
 | `DSH_OFFPEAK_PAUSE_MODE` | `finish-turn` | `pauseMode` |
+| `DSH_OFFPEAK_HOLD_MESSAGES` | `0` / `1` | `holdMessages` |
 | `DSH_OFFPEAK_TIMEZONE` | `Asia/Shanghai` | `timezone` |
 | `DSH_OFFPEAK_PEAK_WEEKDAYS` | `1,2,3,4,5` | `peakWeekdays` |
 | `DSH_OFFPEAK_PEAK_WINDOWS` | `09:00-12:00,14:00-18:00` | `peakWindows` |
@@ -107,6 +111,7 @@ Deployments can inject settings with environment variables. Priority: **env > co
 Click the sidebar clock to open it:
 
 - **Peak strategy**: pause immediately or finish the current turn first;
+- **Message holding**: hold messages sent during peak and send them at off-peak;
 - **Models**: provider-grouped catalog with a checkbox per model (persisted as `modelRules`, overriding `modelPattern`);
 - **Session exemptions**: searchable list of live root sessions; hover a session row in the left sidebar for a shield button, or use the **Exempt this session** button in the composer strip to toggle the current conversation directly;
 - **Holidays**: show the dynamic sync state.
@@ -135,6 +140,14 @@ State and snapshots live in `$DSH_HOME/offpeak-guard/`:
 - `holidays.json`: cached dynamic holiday dates.
 
 Nothing is written into user workspaces.
+
+## Holding peak messages
+
+- When a user sends a message during peak, the Host first inserts it into the Agent inbox. The guard listens to `agent/inbox/inserted` and removes it before the Agent claims it, then stores it in `state.json` under `heldMessages`.
+- At off-peak, the tick sends the original `content` again, preserving text and attachment blocks; the composer strip shows "held N".
+- The settings panel toggle "Hold messages sent during peak" turns this off; the old immediate-cancel behavior returns.
+- If persisting the hold fails, the message is put back into the inbox so it is not lost.
+- This is host-side behavior and does not modify the composer DOM; commands and attachments still use the normal DSH composer.
 
 ## Tool session boundaries
 

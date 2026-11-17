@@ -25,6 +25,7 @@ export const Config = z.object({
   enabled: z.boolean().default(true),
   preset: z.string().default('auto'),
   pauseMode: z.string().default('pause-now'),
+  holdMessages: z.boolean().default(true),
   timezone: z.string().default('Asia/Shanghai'),
   peakWeekdays: z.array(z.natural().max(6)).default([1, 2, 3, 4, 5]),
   peakWindows: z
@@ -95,6 +96,10 @@ export function envConfig(env = process.env) {
   }
   if (env.DSH_OFFPEAK_PRESET) out.preset = String(env.DSH_OFFPEAK_PRESET).trim();
   if (env.DSH_OFFPEAK_PAUSE_MODE) out.pauseMode = String(env.DSH_OFFPEAK_PAUSE_MODE).trim();
+  if (env.DSH_OFFPEAK_HOLD_MESSAGES !== undefined) {
+    const value = parseBoolean(env.DSH_OFFPEAK_HOLD_MESSAGES);
+    if (value !== undefined) out.holdMessages = value;
+  }
   if (env.DSH_OFFPEAK_TIMEZONE) out.timezone = String(env.DSH_OFFPEAK_TIMEZONE).trim();
   if (env.DSH_OFFPEAK_PEAK_WEEKDAYS !== undefined) {
     const value = parseWeekdays(env.DSH_OFFPEAK_PEAK_WEEKDAYS);
@@ -275,6 +280,11 @@ export function apply(ctx, rawConfig = {}) {
               }
               if (body.action === 'pauseMode') {
                 const result = await guard.setPauseMode(body.mode === 'finish-turn' ? 'finish-turn' : 'pause-now');
+                sendJson(res, 200, { ok: true, result });
+                return;
+              }
+              if (body.action === 'holdMessages') {
+                const result = await guard.setHoldMessages(body.enabled === true);
                 sendJson(res, 200, { ok: true, result });
                 return;
               }
