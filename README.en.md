@@ -41,7 +41,7 @@ Click the clock to open the settings panel:
 Adapted for the **industrial acid skin** (`dsh-industrial-acid-skin`, v2.4.x):
 
 - The skin rebuilds the sidebar footer as square, monospace blocks and places the guard clock and its own AppearanceFooter in the same `sidebar.footer.action` container. The guard now stacks them vertically so the clock takes a full row and the skin controls keep their full width.
-- The sidebar clock uses the skin's square border and monospace type, keeps a 32×32 icon in the collapsed rail, and appears with the skin's MORE drawer when the skin collapses the footer — it never covers the session list.
+- The sidebar clock uses the skin's square border and monospace type, keeps a 32×32 icon in the collapsed rail, and appears with the skin's MORE drawer when the skin collapses the footer — hidden while the drawer is closed and shown when it opens, without covering the session list.
 - The settings panel follows the skin's square border, monospace headings, and hard green shadow; segmented buttons, checkboxes, and the session-exemption button use the skin palette.
 - The composer strip uses the skin's monospace font. Peak/off-peak colors are derived from the skin palette, so they stay readable in both day and night canvases and after palette changes, instead of hard-coded red/green.
 - Everything is scoped under `html[data-industrial-acid]`: with the skin absent, disabled, or after switching back to the default theme, the appearance is unchanged and no configuration is needed.

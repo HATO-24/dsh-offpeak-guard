@@ -2,8 +2,9 @@
  * 工业酸性皮肤适配：锁住 client.js 里的皮肤样式块，避免它退化成
  * 影响所有主题的全局覆盖，也避免关键布局规则被误删。
  *
- * 这些规则只描述“皮肤存在时”的行为，因此每条都必须以
- * html[data-industrial-acid] 开头；未安装皮肤时一分不生效。
+ * 这些规则只描述“皮肤存在时”的行为，因此每条（包括逗号分组和
+ * @media 内层）都必须以 html[data-industrial-acid] 开头；
+ * 未安装皮肤时一分不生效。
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,57 +15,110 @@ const match = client.match(/const acidSkinStyle = `([\s\S]*?)`;/);
 assert.ok(match, 'client.js 应定义 acidSkinStyle 常量');
 
 const skinStyle = match[1];
-// @keyframes 内部的关键帧不是选择器规则，先剥离再逐条检查作用域。
-const rules = [...skinStyle.replace(/@keyframes\s+[\w-]+\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
-  selector: selector.trim().replace(/\s+/g, ' '),
-  body,
-}));
+const lines = skinStyle
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line !== '');
+
+const SCOPED = /^html\[data-industrial-acid\]/;
+
+/** 取规则选择器部分；兼容一行一条规则的写法。 */
+function selectorsOf(rule) {
+  const brace = rule.indexOf('{');
+  return brace === -1 ? '' : rule.slice(0, brace);
+}
+
+/** 拆分逗号分组，逐个检查作用域；否则 `html[...] .a, .b` 会漏掉 .b。 */
+function assertScoped(selectorText, origin) {
+  const parts = selectorText.split(',').map((part) => part.trim()).filter((part) => part !== '');
+  assert.ok(parts.length > 0, `空选择器：${origin}`);
+  for (const part of parts) {
+    assert.match(part, SCOPED, `规则没有皮肤作用域（${origin}）：${part}`);
+  }
+}
 
 test('皮肤样式块里的每条规则都以 html[data-industrial-acid] 开头', () => {
-  for (const rule of rules) {
-    if (rule.selector.startsWith('@keyframes ')) continue;
-    assert.match(
-      rule.selector,
-      /^html\[data-industrial-acid\]/,
-      `规则没有皮肤作用域：${rule.selector}`,
-    );
+  for (const line of lines) {
+    if (line.startsWith('@keyframes ')) continue;
+    if (line.startsWith('@media ')) {
+      // 本项目每个 @media 只包一条规则；内部仍要逐条检查作用域。
+      const inner = line.slice(line.indexOf('{') + 1, line.lastIndexOf('}'));
+      const innerRules = [...inner.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+      assert.ok(innerRules.length > 0, `@media 内没有规则：${line}`);
+      for (const [, selector] of innerRules) assertScoped(selector, '@media');
+      continue;
+    }
+    assertScoped(selectorsOf(line), 'rule');
   }
 });
 
 test('皮肤样式块的括号成对、规则体非空', () => {
   assert.equal((skinStyle.match(/\{/g) ?? []).length, (skinStyle.match(/\}/g) ?? []).length);
-  for (const rule of rules) assert.notEqual(rule.body.trim(), '', `空规则：${rule.selector}`);
+  for (const line of lines) {
+    if (line.startsWith('@keyframes ')) continue;
+    if (line.startsWith('@media ')) continue;
+    const body = line.slice(line.indexOf('{') + 1, line.lastIndexOf('}')).trim();
+    assert.notEqual(body, '', `空规则：${line}`);
+  }
 });
 
 test('皮肤下 sidebar.footer.action 容器改为纵向堆叠', () => {
-  const footer = rules.find((rule) => rule.selector.includes('[data-slot="sidebar.footer.action"]'));
+  const footer = lines.find(
+    (line) => line.includes('div:has(> [data-slot="sidebar.footer.action"])'),
+  );
   assert.ok(footer, '应包含 footer.action 容器规则');
-  assert.match(footer.selector, /div:has\(> \[data-slot="sidebar\.footer\.action"\]\)/);
-  assert.match(footer.body, /flex-direction:column/);
+  assert.match(footer, /^html\[data-industrial-acid\] div:has\(> \[data-slot="sidebar\.footer\.action"\]\)\{/);
+  assert.match(footer, /flex-direction:column/);
 });
 
 test('皮肤下时钟改为整行直角样式并有紧凑态', () => {
-  const clock = rules.find((rule) => rule.selector === 'html[data-industrial-acid] .opg-clock');
+  const clock = lines.find((line) => line.startsWith('html[data-industrial-acid] .opg-clock{'));
   assert.ok(clock);
-  assert.match(clock.body, /width:100%/);
-  assert.match(clock.body, /height:30px/);
-  assert.match(clock.body, /border-radius:2px/);
+  assert.match(clock, /width:100%/);
+  assert.match(clock, /height:30px/);
+  assert.match(clock, /border-radius:2px/);
 
-  const compact = rules.find((rule) => rule.selector.includes('[data-compact="true"]'));
+  const compact = lines.find((line) => line.includes('[data-compact="true"]'));
   assert.ok(compact, '应保留折叠侧栏的紧凑时钟');
-  assert.match(compact.body, /width:32px/);
+  assert.match(compact, /width:32px/);
 });
 
 test('皮肤下设置面板沿用皮肤的直角、等宽字体和色板', () => {
-  const panel = rules.find((rule) => rule.selector === 'html[data-industrial-acid] .opg-panel');
+  const panel = lines.find((line) => line.startsWith('html[data-industrial-acid] .opg-panel{'));
   assert.ok(panel);
-  assert.match(panel.body, /border-radius:2px/);
-  assert.match(panel.body, /var\(--acid-rule/);
-  assert.match(panel.body, /box-shadow:7px 7px 0/);
+  assert.match(panel, /border-radius:2px/);
+  assert.match(panel, /var\(--acid-rule/);
+  assert.match(panel, /box-shadow:7px 7px 0/);
 
-  const heading = rules.find((rule) => rule.selector.includes('.opg-panel-head strong'));
+  const heading = lines.find((line) => line.includes('.opg-panel-head strong'));
   assert.ok(heading);
-  assert.match(heading.body, /var\(--opg-acid-font\)/);
+  assert.match(heading, /var\(--opg-acid-font\)/);
+
+  const search = lines.find((line) => line.includes('.opg-search'));
+  assert.ok(search, '设置面板搜索框也要走皮肤直角');
+  assert.match(search, /border-radius:2px/);
+});
+
+test('颜色变量必须定义在 body 上（html 上没有 --dsw alias token）', () => {
+  const bodyRule = lines.find((line) => line.startsWith('html[data-industrial-acid] body{'));
+  assert.ok(bodyRule, '应在 body 上定义 --opg-* 颜色变量');
+  assert.match(bodyRule, /--opg-peak-dot:color-mix\(/);
+  assert.match(bodyRule, /--opg-valley-dot:color-mix\(/);
+  assert.match(bodyRule, /var\(--dsw-alias-label-primary\)/);
+
+  const htmlRule = lines.find((line) => line.startsWith('html[data-industrial-acid]{'));
+  if (htmlRule !== undefined) {
+    assert.ok(!htmlRule.includes('--opg-peak-dot'), '颜色变量不应定义在 html 上');
+  }
+});
+
+test('皮肤下保留减弱动效的静态状态', () => {
+  assert.ok(
+    lines.some((line) => line.startsWith('@media (prefers-reduced-motion: reduce)') && line.includes('.opg-clock[data-blink]')),
+    '应关闭皮肤下的闪烁动画',
+  );
+  assert.ok(lines.some((line) => line.startsWith('@keyframes opg-acid-blink-red')));
+  assert.ok(lines.some((line) => line.startsWith('@keyframes opg-acid-blink-green')));
 });
 
 test('皮肤样式不使用 !important，避免与皮肤互相压制', () => {
@@ -84,4 +138,5 @@ test('未启用皮肤时保留原有默认样式', () => {
   assert.match(client, /\.opg-clock\{[^}]*min-height:32px/);
   assert.match(client, /\.opg-panel\{border:none;border-radius:14px/);
   assert.match(client, /\.opg-exempt\[data-exempt="true"\]\{color:#e0554e/);
+  assert.match(client, /\.opg-search\{[^}]*border-radius:7px/);
 });

@@ -176,6 +176,7 @@ test('谷价 tick 把暂存消息按原内容投递', async () => {
       (value) => value.heldMessages[0]?.status === 'delivered',
     );
     assert.equal(state.heldMessages[0].status, 'delivered');
+    assert.equal(prompts.length, 1, '同一消息不应重复投递');
   } finally {
     stop();
     await new Promise((resolve) => setTimeout(resolve, 30));
