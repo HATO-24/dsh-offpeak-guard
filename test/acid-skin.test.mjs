@@ -87,7 +87,7 @@ test('皮肤下设置面板沿用皮肤的直角、等宽字体和色板', () =>
   const panel = lines.find((line) => line.startsWith('html[data-industrial-acid] .opg-panel{'));
   assert.ok(panel);
   assert.match(panel, /border-radius:2px/);
-  assert.match(panel, /var\(--acid-rule/);
+  assert.match(panel, /var\(--opg-page-border/);
   assert.match(panel, /box-shadow:7px 7px 0/);
 
   const heading = lines.find((line) => line.includes('.opg-panel-head strong'));
@@ -105,11 +105,27 @@ test('颜色变量必须定义在 body 上（html 上没有 --dsw alias token）
   assert.match(bodyRule, /--opg-peak-dot:color-mix\(/);
   assert.match(bodyRule, /--opg-valley-dot:color-mix\(/);
   assert.match(bodyRule, /var\(--dsw-alias-label-primary\)/);
+  assert.match(bodyRule, /--opg-page-label:var\(--dsw-alias-label-primary\)/);
 
   const htmlRule = lines.find((line) => line.startsWith('html[data-industrial-acid]{'));
   if (htmlRule !== undefined) {
     assert.ok(!htmlRule.includes('--opg-peak-dot'), '颜色变量不应定义在 html 上');
   }
+});
+
+test('侧栏内重算峰谷色，使用侧栏前景而不是页面前景', () => {
+  const sidebarRule = lines.find((line) => line.startsWith('html[data-industrial-acid] [data-slot="sidebar"]{'));
+  assert.ok(sidebarRule, '侧栏作用域应重算峰谷色');
+  assert.match(sidebarRule, /--opg-peak-dot:color-mix\(/);
+  assert.match(sidebarRule, /--opg-valley-dot:color-mix\(/);
+});
+
+test('减弱动效的关闭规则在闪烁规则之后，且皮肤关动效时也生效', () => {
+  const red = skinStyle.indexOf('html[data-industrial-acid] .opg-clock[data-blink="red"]');
+  const green = skinStyle.indexOf('html[data-industrial-acid] .opg-clock[data-blink="green"]');
+  const reduce = skinStyle.indexOf('@media (prefers-reduced-motion: reduce)');
+  assert.ok(red > 0 && green > 0 && reduce > red && reduce > green, 'reduce 规则必须在 animation 规则之后');
+  assert.ok(lines.some((line) => line.includes('data-industrial-motion="off"') && line.includes('.opg-clock[data-blink]')));
 });
 
 test('皮肤下保留减弱动效的静态状态', () => {
