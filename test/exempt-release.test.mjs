@@ -17,7 +17,9 @@ test('豁免会话时立即发送该会话的挂起消息，其它会话不动',
 
   const held = {
     version: 1,
-    interrupted: [],
+    interrupted: [
+      { id: 'paused-a', sessionId: 'session-a', title: 'A', at: 500, status: 'paused' },
+    ],
     plans: [],
     heldMessages: [
       { id: 'held-b1', sessionId: 'session-b', title: 'B', content: [{ type: 'text', text: 'b1' }], at: 900, status: 'held' },
@@ -78,6 +80,9 @@ test('豁免会话时立即发送该会话的挂起消息，其它会话不动',
     assert.equal(byId['held-a2'].status, 'delivered');
     assert.equal(byId['held-a1'].deliveredBy, 'exempt');
     assert.equal(byId['held-b1'].status, 'held');
+    const paused = state.interrupted.find((item) => item.id === 'paused-a');
+    assert.equal(paused.status, 'resumed');
+    assert.equal(paused.resumedBy, 'held-message');
 
     // 取消豁免不应再次投递
     await guard.setExempt('session-a', false);

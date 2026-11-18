@@ -263,6 +263,23 @@ export function apply(ctx, rawConfig = {}) {
                 return;
               }
               const body = await readJsonBody(req);
+              if (body.action === 'held:update') {
+                const result = await guard.updateHeld(
+                  String(body.sessionId || ''),
+                  String(body.id || ''),
+                  String(body.text ?? ''),
+                );
+                sendJson(res, 200, { ok: true, result });
+                return;
+              }
+              if (body.action === 'held:delete') {
+                const result = await guard.deleteHeld(
+                  String(body.sessionId || ''),
+                  String(body.id || ''),
+                );
+                sendJson(res, 200, { ok: true, result });
+                return;
+              }
               if (body.action === 'exempt' || body.action === 'unexempt') {
                 const exempt = body.action === 'exempt' ? body.exempt === true : false;
                 const result = await guard.setExempt(String(body.sessionId || ''), exempt);

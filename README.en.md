@@ -10,7 +10,7 @@ Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
 - **Time awareness**: per DeepSeek's official pricing, Beijing-time weekdays (excluding Chinese statutory holidays) `09:00–12:00` and `14:00–18:00` are peak; every other hour (weekends, holidays, lunch, night) is off-peak at 50%. Holidays sync from a public API with a built-in 2026 fallback.
 - **Model awareness**: exact `provider / model` detection; models containing `deepseek` are managed by default, and the settings panel can toggle each model. `peakPricedModels` / `exemptModels` provide exact control.
 - **Peak strategy**: choose immediate pause or finish the current turn first; if a session has running subagents, they are allowed to finish and the parent is paused afterwards, then resumed at off-peak.
-- **Peak message holding**: a user message sent during peak is removed from the Agent inbox before it is claimed, stored, and sent with its original content when off-peak starts. Enabled by default; the settings panel can turn it off.
+- **Peak message holding**: a user message sent during peak is removed from the Agent inbox before it is claimed, stored, and sent with its original content when off-peak starts. While held, it appears as a "queued" card under the composer strip and can be edited or deleted before the automatic send. Enabled by default; the settings panel can turn it off.
 - **Session exemptions**: exempt the current session via `offpeak_guard exempt/unexempt`, or any session from the settings panel / sidebar row; un-exempt at any time. Model tools cannot target other sessions. Exempting a session also immediately delivers any peak messages held for that session.
 - **Tool boundary**: every session-level `offpeak_plan` / `offpeak_guard` action is limited to the calling session; tools cannot deliver prompts to, resume, or wake another session. Cross-session exemptions are a user action in the UI.
 - **Work planning**:
@@ -158,6 +158,8 @@ Nothing is written into user workspaces.
 - At off-peak, the tick sends the original `content` again, preserving text and attachment blocks; the composer strip shows "held N".
 - The settings panel toggle "Hold messages sent during peak" turns this off; the old immediate-cancel behavior returns.
 - Exempting a session immediately sends that session's held messages in their original order, without waiting for off-peak; held messages of other sessions are untouched.
+- Held messages appear as "queued" cards under the composer strip; edit the text or delete them before the off-peak automatic send. Editing preserves attachment blocks.
+- When held messages are delivered successfully at off-peak, the automatic "off-peak started, continue" resume prompt is skipped for that session; only sessions without held messages receive the automatic resume.
 - If persisting the hold fails, the message is put back into the inbox so it is not lost.
 - This is host-side behavior and does not modify the composer DOM; commands and attachments still use the normal DSH composer.
 

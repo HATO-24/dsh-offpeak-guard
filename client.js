@@ -233,8 +233,10 @@ window.__ModuleLoader__.load({
       return function Strip(props) {
         const ctx = pluginCtx;
         const t = useLocale(ctx);
-        const { snapshot, error } = useSnapshot(ctx, props?.sessionId);
+        const { snapshot, error, refresh } = useSnapshot(ctx, props?.sessionId);
         const [busy, setBusy] = React.useState(false);
+        const [editingHeld, setEditingHeld] = React.useState(null);
+        const [heldDraft, setHeldDraft] = React.useState('');
         const [, force] = React.useState(0);
 
       React.useEffect(() => {
@@ -300,6 +302,135 @@ window.__ModuleLoader__.load({
       if (held > 0) children.push(h('span', { key: 'held', style: { color: 'var(--opg-held-text, #b26a00)' } }, `· 挂起 ${held}`));
       if (plans > 0) children.push(h('span', { key: 'plans' }, `· ${t('plans')} ${plans}`));
       const currentSessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
+      const heldItems =
+        currentSessionId === ''
+          ? []
+          : (Array.isArray(snapshot.heldMessages) ? snapshot.heldMessages : []).filter(
+              (item) => item.sessionId === currentSessionId,
+            );
+      const heldTextOf = (item) =>
+        Array.isArray(item.content)
+          ? item.content
+              .filter((block) => block?.type === 'text')
+              .map((block) => block.text)
+              .join('\n')
+          : '';
+      const heldTimeOf = (at) => {
+        const date = new Date(Number(at) || Date.now());
+        return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      };
+      const saveHeld = async (item) => {
+        setBusy(true);
+        try {
+          await postAction({
+            action: 'held:update',
+            sessionId: currentSessionId,
+            id: item.id,
+            text: heldDraft,
+          });
+          await refresh();
+          setEditingHeld(null);
+        } catch {
+          /* 保留编辑内容，用户可重试 */
+        } finally {
+          setBusy(false);
+        }
+      };
+      const removeHeld = async (item) => {
+        setBusy(true);
+        try {
+          await postAction({ action: 'held:delete', sessionId: currentSessionId, id: item.id });
+          await refresh();
+          if (editingHeld === item.id) setEditingHeld(null);
+        } catch {
+          /* 忽略，下一次刷新会恢复 */
+        } finally {
+          setBusy(false);
+        }
+      };
+      const heldQueue =
+        heldItems.length === 0
+          ? null
+          : h(
+              'div',
+              { className: 'opg-held-queue', key: 'held-queue' },
+              h('div', { className: 'opg-held-title' }, `峰时挂起 · ${heldItems.length} 条 · 谷价自动发送前可修改`),
+              ...heldItems.map((item) =>
+                h(
+                  'div',
+                  { className: 'opg-held-card', key: item.id },
+                  h(
+                    'div',
+                    { className: 'opg-held-head' },
+                    h('span', { className: 'opg-held-tag' }, '排队中'),
+                    h('span', { className: 'opg-held-time' }, heldTimeOf(item.at)),
+                    item.model ? h('span', { className: 'opg-held-model' }, item.model) : null,
+                    h(
+                      'span',
+                      { className: 'opg-held-actions' },
+                      editingHeld === item.id
+                        ? [
+                            h(
+                              'button',
+                              {
+                                key: 'save',
+                                type: 'button',
+                                disabled: busy,
+                                onClick: () => void saveHeld(item),
+                              },
+                              '保存',
+                            ),
+                            h(
+                              'button',
+                              {
+                                key: 'cancel',
+                                type: 'button',
+                                onClick: () => {
+                                  setEditingHeld(null);
+                                  setHeldDraft('');
+                                },
+                              },
+                              '取消',
+                            ),
+                          ]
+                        : [
+                            h(
+                              'button',
+                              {
+                                key: 'edit',
+                                type: 'button',
+                                onClick: () => {
+                                  setEditingHeld(item.id);
+                                  setHeldDraft(heldTextOf(item));
+                                },
+                              },
+                              '编辑',
+                            ),
+                            h(
+                              'button',
+                              {
+                                key: 'delete',
+                                type: 'button',
+                                disabled: busy,
+                                onClick: () => void removeHeld(item),
+                              },
+                              '删除',
+                            ),
+                          ],
+                    ),
+                  ),
+                  editingHeld === item.id
+                    ? h('textarea', {
+                        className: 'opg-held-edit',
+                        value: heldDraft,
+                        rows: 3,
+                        placeholder: '谷价发送前可以修改这条消息…',
+                        onChange: (event) => setHeldDraft(event.target.value),
+                      })
+                    : h('div', { className: 'opg-held-text' }, heldTextOf(item) || '（含附件）'),
+                ),
+              ),
+            );
       const currentExempt =
         currentSessionId !== '' &&
         (snapshot.exemptSessions ?? []).some((item) => item.sessionId === currentSessionId);
@@ -331,7 +462,7 @@ window.__ModuleLoader__.load({
         );
       }
 
-      return h(
+      const bar = h(
         'div',
         {
           title: tip,
@@ -350,6 +481,7 @@ window.__ModuleLoader__.load({
         },
         children,
       );
+      return h(React.Fragment, null, heldQueue === null ? [bar] : [bar, heldQueue]);
     };
     }
 
@@ -426,6 +558,11 @@ html[data-industrial-acid] .opg-exempt{border:1px solid var(--acid-rule,var(--ds
 html[data-industrial-acid] .opg-exempt[data-exempt="true"]{color:color-mix(in srgb,#e0554e 55%,var(--dsw-alias-label-primary));border-color:color-mix(in srgb,#e0554e 40%,var(--acid-rule,var(--dsw-alias-border-l1)));}
 html[data-industrial-acid] .opg-exempt:hover{border-color:var(--dsw-alias-label-secondary);}
 html[data-industrial-acid] .opg-search{border-color:var(--opg-page-border,var(--dsw-alias-border-l1));border-radius:2px;font:11px/1.4 var(--opg-acid-font);}
+html[data-industrial-acid] .opg-held-card{border-radius:2px;border-color:var(--opg-page-border,var(--dsw-alias-border-l1));background:var(--dsw-alias-bg-base);font-family:var(--opg-acid-font);}
+html[data-industrial-acid] .opg-held-title{font-family:var(--opg-acid-font);letter-spacing:.04em;}
+html[data-industrial-acid] .opg-held-tag{color:var(--acid-lime);}
+html[data-industrial-acid] .opg-held-edit{border-radius:2px;font-family:var(--opg-acid-font);}
+html[data-industrial-acid] .opg-held-actions button{font-family:var(--opg-acid-font);letter-spacing:.04em;}
 html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industrial-acid] .opg-trail{color:color-mix(in srgb,#e0554e 55%,var(--acid-sidebar-fore));}
 `;
 
@@ -471,6 +608,18 @@ html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industr
 .opg-exempt[data-exempt="true"]{color:#e0554e;border-color:#e0554e66;}
 .opg-exempt:hover{border-color:var(--dsw-alias-label-secondary,#8a8d94);}
 .opg-search{width:100%;box-sizing:border-box;margin:0 0 6px;padding:5px 8px;border:1px solid var(--dsw-alias-border-l1,#dde0e6);border-radius:7px;background:transparent;color:inherit;font:inherit;}
+.opg-held-queue{display:flex;flex-direction:column;gap:6px;margin:0 6px 6px;text-align:left;}
+.opg-held-title{font-size:10px;line-height:1.4;color:var(--dsw-alias-label-secondary,#6c7769);padding:0 2px;}
+.opg-held-card{border:1px solid var(--dsw-alias-border-l1,#dde0e6);border-radius:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-1,#f7f8fa);font:11px/1.4 var(--dsw-font-family,system-ui,sans-serif);color:var(--dsw-alias-label-primary,#252936);}
+.opg-held-head{display:flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary,#6c7769);}
+.opg-held-tag{font-weight:600;color:var(--dsw-alias-state-business-primary,#4d6bfe);}
+.opg-held-model{opacity:.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:30%;}
+.opg-held-actions{margin-left:auto;display:inline-flex;gap:6px;}
+.opg-held-actions button{border:0;background:transparent;color:inherit;cursor:pointer;font:inherit;padding:0;}
+.opg-held-actions button:hover{text-decoration:underline;}
+.opg-held-actions button:disabled{opacity:.4;cursor:default;}
+.opg-held-text{margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:4.2em;overflow:hidden;}
+.opg-held-edit{width:100%;box-sizing:border-box;margin-top:5px;padding:5px 7px;border:1px solid var(--dsw-alias-border-l1,#dde0e6);border-radius:6px;background:transparent;color:inherit;font:inherit;resize:vertical;min-height:48px;}
 ` + acidSkinStyle;
 
     function ClockIcon() {
