@@ -11,7 +11,7 @@ Schedule work around **DeepSeek peak/off-peak pricing** inside DeepSeek Harness:
 - **Model awareness**: exact `provider / model` detection; models containing `deepseek` are managed by default, and the settings panel can toggle each model. `peakPricedModels` / `exemptModels` provide exact control.
 - **Peak strategy**: choose immediate pause or finish the current turn first; if a session has running subagents, they are allowed to finish and the parent is paused afterwards, then resumed at off-peak.
 - **Peak message holding**: a user message sent during peak is removed from the Agent inbox before it is claimed, stored, and sent with its original content when off-peak starts. Enabled by default; the settings panel can turn it off.
-- **Session exemptions**: exempt the current session via `offpeak_guard exempt/unexempt`, or any session from the settings panel / sidebar row; un-exempt at any time. Model tools cannot target other sessions.
+- **Session exemptions**: exempt the current session via `offpeak_guard exempt/unexempt`, or any session from the settings panel / sidebar row; un-exempt at any time. Model tools cannot target other sessions. Exempting a session also immediately delivers any peak messages held for that session.
 - **Tool boundary**: every session-level `offpeak_plan` / `offpeak_guard` action is limited to the calling session; tools cannot deliver prompts to, resume, or wake another session. Cross-session exemptions are a user action in the UI.
 - **Work planning**:
   - peak starts → running tasks are paused (the pending inbox is kept, no message is lost);
@@ -124,7 +124,7 @@ Click the sidebar clock to open it:
 - **Peak strategy**: pause immediately or finish the current turn first;
 - **Message holding**: hold messages sent during peak and send them at off-peak;
 - **Models**: provider-grouped catalog with a checkbox per model (persisted as `modelRules`, overriding `modelPattern`);
-- **Session exemptions**: searchable list of live root sessions; hover a session row in the left sidebar for a shield button, or use the **Exempt this session** button in the composer strip to toggle the current conversation directly;
+- **Session exemptions**: searchable list of live root sessions; hover a session row in the left sidebar for a shield button, or use the **Exempt this session** button in the composer strip to toggle the current conversation directly; exempting a session with held peak messages sends them immediately, in their original order;
 - **Holidays**: show the dynamic sync state.
 
 ### Route admission
@@ -157,6 +157,7 @@ Nothing is written into user workspaces.
 - When a user sends a message during peak, the Host first inserts it into the Agent inbox. The guard listens to `agent/inbox/inserted` and removes it before the Agent claims it, then stores it in `state.json` under `heldMessages`.
 - At off-peak, the tick sends the original `content` again, preserving text and attachment blocks; the composer strip shows "held N".
 - The settings panel toggle "Hold messages sent during peak" turns this off; the old immediate-cancel behavior returns.
+- Exempting a session immediately sends that session's held messages in their original order, without waiting for off-peak; held messages of other sessions are untouched.
 - If persisting the hold fails, the message is put back into the inbox so it is not lost.
 - This is host-side behavior and does not modify the composer DOM; commands and attachments still use the normal DSH composer.
 

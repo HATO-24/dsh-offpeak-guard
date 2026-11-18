@@ -403,13 +403,15 @@ html[data-industrial-acid] .opg-clock[data-blink="green"]{animation:opg-acid-bli
 @keyframes opg-acid-blink-green{0%,100%{color:var(--opg-valley-dot);opacity:1;}50%{opacity:.4;}}
 @media (prefers-reduced-motion: reduce){html[data-industrial-acid] .opg-clock[data-blink]{animation:none;}}
 html[data-industrial-acid][data-industrial-motion="off"] .opg-clock[data-blink]{animation:none;}
-html[data-industrial-acid] .opg-panel{width:min(600px,92vw);border:1px solid var(--opg-page-border,var(--dsw-alias-border-l1));border-radius:2px;background:var(--dsw-alias-bg-base);color:var(--opg-page-label,var(--dsw-alias-label-primary));box-shadow:7px 7px 0 color-mix(in srgb,var(--acid-lime) 30%,transparent);font:13px/1.6 var(--dsw-font-family,system-ui,sans-serif);}
+html[data-industrial-acid] .opg-panel{width:min(600px,92vw);border:1px solid var(--opg-page-border,var(--dsw-alias-border-l1));border-radius:2px;background:var(--dsw-alias-bg-base);color:var(--opg-page-label,var(--dsw-alias-label-primary));box-shadow:7px 7px 0 color-mix(in srgb,var(--acid-lime) 30%,transparent);font:13px/1.6 var(--dsw-font-family,system-ui,sans-serif);pointer-events:auto;}
 html[data-industrial-acid] .opg-panel::backdrop{background:#000a;backdrop-filter:blur(4px);}
 html[data-industrial-acid] .opg-panel-head{padding:15px 18px;border-bottom:1px solid var(--opg-page-border,var(--dsw-alias-border-l1));}
 html[data-industrial-acid] .opg-panel-head strong{font:700 13px/1.2 var(--opg-acid-font);letter-spacing:.12em;text-transform:uppercase;}
 html[data-industrial-acid] .opg-panel-body{padding:16px 18px;}
-html[data-industrial-acid] .opg-panel-close{border:1px solid var(--opg-page-border,var(--dsw-alias-border-l1));border-radius:2px;padding:6px 11px;font:600 11px/1 var(--opg-acid-font);letter-spacing:.06em;color:inherit;}
+html[data-industrial-acid] .opg-panel-close{border:1px solid var(--opg-page-border,var(--dsw-alias-border-l1));border-radius:2px;padding:6px 11px;font:600 11px/1 var(--opg-acid-font);letter-spacing:.06em;color:inherit;position:relative;z-index:3;}
 html[data-industrial-acid] .opg-panel-close:hover{background:var(--acid-lime);color:var(--acid-ink,#121711);}
+html[data-industrial-acid] .opg-seg button:hover{background:var(--acid-lime);color:var(--acid-ink,#121711);}
+html[data-industrial-acid] .opg-row:hover{background:color-mix(in srgb,var(--acid-lime) 7%,transparent);}
 html[data-industrial-acid] .opg-panel-meta{font:11px/1.5 var(--opg-acid-font);letter-spacing:.03em;color:var(--opg-page-secondary,var(--dsw-alias-label-secondary));}
 html[data-industrial-acid] .opg-section h4{font:700 10px/1 var(--opg-acid-font);letter-spacing:.14em;text-transform:uppercase;color:var(--opg-page-secondary,var(--dsw-alias-label-secondary));}
 html[data-industrial-acid] .opg-row-sub,html[data-industrial-acid] .opg-group-name{font-family:var(--opg-acid-font);letter-spacing:.02em;color:var(--opg-page-secondary,var(--dsw-alias-label-secondary));}
@@ -544,7 +546,21 @@ html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industr
       return h('div', { className: 'opg-panel-shell' }, [
         h('div', { className: 'opg-panel-head', key: 'head' }, [
           h('strong', { key: 'title' }, '峰谷守卫设置'),
-          h('button', { key: 'close', className: 'opg-panel-close', onClick: onClose }, '关闭'),
+          h('button', {
+            key: 'close',
+            type: 'button',
+            className: 'opg-panel-close',
+            onPointerDown: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            },
+            onClick: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            },
+          }, '关闭'),
         ]),
         h('div', { className: 'opg-panel-body', key: 'body' }, [
           h(
@@ -621,6 +637,7 @@ html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industr
           ]),
           h('div', { className: 'opg-section', key: 'sessions' }, [
             h('h4', { key: 'h' }, '会话豁免（不参与暂停/恢复）'),
+            h('div', { className: 'opg-note', key: 'exempt-note' }, '勾选豁免后，该会话已挂起的峰时消息会立即发送，不用等谷价。'),
             h('input', {
               key: 'search',
               type: 'search',
@@ -732,6 +749,19 @@ html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industr
         const { snapshot } = useSnapshot(pluginCtx, null);
         const [open, setOpen] = React.useState(false);
         const dialogRef = React.useRef(null);
+        // 关闭面板不走 useEffect 的延迟路径：按钮按下时立即关掉 <dialog>，
+        // 避免皮肤转场/代理层在 pointerup 与 click 之间插层导致点击丢失。
+        const closePanel = React.useCallback(() => {
+          setOpen(false);
+          const dialog = dialogRef.current;
+          if (dialog?.open) {
+            try {
+              dialog.close();
+            } catch {
+              /* ignore */
+            }
+          }
+        }, []);
         const groups = useCatalog(pluginCtx, open);
         const [, force] = React.useState(0);
         React.useEffect(() => {
@@ -812,7 +842,7 @@ html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industr
             ref: dialogRef,
             className: 'opg-panel',
             onClick: (event) => {
-              if (event.target === event.currentTarget) setOpen(false);
+              if (event.target === event.currentTarget) closePanel();
             },
           },
           open
@@ -820,7 +850,7 @@ html[data-industrial-acid] .opg-row-action[data-exempt="true"],html[data-industr
                 ctx: pluginCtx,
                 snapshot,
                 groups,
-                onClose: () => setOpen(false),
+                onClose: closePanel,
               })
             : null,
         );

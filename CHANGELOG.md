@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 — 2026-11-18
+
+- 会话被豁免时，立即发送该会话在峰时挂起的消息：按 `at` 升序投递、保留原 `content`，标记 `deliveredBy: 'exempt'`；其它会话的挂起消息保持不变，取消豁免不会触发投递。
+- `offpeak_guard exempt` 的返回值和文本提示新增 `releasedHeld`（本次发送的挂起消息数）。
+- `deliverHeld` 支持按会话过滤，并加 `busy.held` 锁，避免豁免投递与谷价 tick 重复发送。
+- 新增 `test/exempt-release.test.mjs`：覆盖只投递目标会话、按时间顺序、`deliveredBy` 标记、取消豁免不重复投递。
+
 ## 0.4.2 — 2026-11-17
 
 - 适配工业酸性皮肤（`dsh-industrial-acid-skin` v2.4.x），只在 `html[data-industrial-acid]` 下生效：
